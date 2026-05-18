@@ -1,68 +1,76 @@
 // ============================================================
-// 語彙クイズ — Vocabulary Quiz App
-// Dados: JMdict (eng-common), processado em words.json + index.json
+// 語彙クイズ — Vocabulary Quiz App (v2: kanji lists)
 // ============================================================
 
-// ---------- ESTADO ----------
-const STORAGE_KEY = "vocab_jmdict_v1";
+const STORAGE_KEY = "vocab_jmdict_v2";
 
-let DATA = {
-  words: [],        // [{k, r, m}]
-  index: {}         // { kanji_char: [indices] }
-};
+let DATA = { words: [], index: {} };
 
 let state = {
-  selected: [],     // Set de IDs (índices) de palavras escolhidas pelo usuário
-  config: { mode: "meaning", length: 10 },
-  quiz: null,
-  currentSearch: null
+  lists: [],         // [{ id, name, kanji: [chars], selected: [wordIdx], created }]
+  config: { mode: "meaning", length: 10, source: "all" },
+  currentListId: null,
+  activeKanji: null,
+  quiz: null
 };
 
+// ---------- STORAGE ----------
 function saveState() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      selected: state.selected,
+      lists: state.lists,
       config: state.config
     }));
-  } catch (e) {
-    toast("Não foi possível salvar", true);
-  }
+  } catch (e) { toast("Não foi possível salvar", true); }
 }
 
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
+    if (!raw) { tryMigrateV1(); return; }
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed.selected)) state.selected = parsed.selected;
+    if (Array.isArray(parsed.lists)) state.lists = parsed.lists;
     if (parsed.config) state.config = { ...state.config, ...parsed.config };
-  } catch (e) {
-    console.warn("Falha ao carregar:", e);
-  }
+  } catch (e) { console.warn(e); }
 }
 
-// ---------- LOADING ----------
+function tryMigrateV1() {
+  try {
+    const v1 = localStorage.getItem("vocab_jmdict_v1");
+    if (!v1) return;
+    const parsed = JSON.parse(v1);
+    if (Array.isArray(parsed.selected) && parsed.selected.length > 0) {
+      state.lists.push({
+        id: genId(),
+        name: "Lista importada",
+        kanji: [],
+        selected: parsed.selected,
+        created: Date.now()
+      });
+      saveState();
+      setTimeout(() => toast(`${parsed.selected.length} palavras importadas`), 800);
+    }
+  } catch (e) {}
+}
+
+function genId() {
+  return "L" + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+}
+
+// ---------- DATA LOADING ----------
 async function loadData() {
   const progressEl = document.getElementById("loading-progress");
   try {
-    const [wordsResp, indexResp] = await Promise.all([
-      fetch("words.json"),
-      fetch("index.json")
-    ]);
-    if (!wordsResp.ok || !indexResp.ok) throw new Error("Falha ao carregar dicionário");
-
+    const [wResp, iResp] = await Promise.all([fetch("words.json"), fetch("index.json")]);
+    if (!wResp.ok || !iResp.ok) throw new Error("Falha");
     progressEl.textContent = "Processando…";
-    const [words, index] = await Promise.all([wordsResp.json(), indexResp.json()]);
-
-    DATA.words = words;
-    DATA.index = index;
-
+    const [w, i] = await Promise.all([wResp.json(), iResp.json()]);
+    DATA.words = w;
+    DATA.index = i;
     progressEl.textContent = "100%";
-    setTimeout(() => {
-      document.getElementById("loading").classList.add("hidden");
-    }, 250);
+    setTimeout(() => document.getElementById("loading").classList.add("hidden"), 250);
   } catch (e) {
-    progressEl.textContent = "Erro ao carregar. Recarregue a página.";
+    progressEl.textContent = "Erro ao carregar. Recarregue.";
     console.error(e);
   }
 }
@@ -90,45 +98,205 @@ function toast(msg, isError = false) {
 const KANJI_RE = /[\u4e00-\u9faf]/;
 const isKanji = c => KANJI_RE.test(c);
 
-// ---------- EXPLORE ----------
-function searchByKanji(input) {
-  const text = (input || "").trim();
-  const resultsEl = document.getElementById("explore-results");
-
-  if (!text) {
-    resultsEl.innerHTML = "";
-    state.currentSearch = null;
-    return;
-  }
-
-  // Pega o primeiro kanji digitado/colado
-  let kanjiChar = null;
+function extractKanji(text) {
+  if (!text) return [];
+  const out = [];
+  const seen = new Set();
   for (const c of text) {
-    if (isKanji(c)) { kanjiChar = c; break; }
+    if (isKanji(c) && !seen.has(c)) { seen.add(c); out.push(c); }
   }
-
-  if (!kanjiChar) {
-    resultsEl.innerHTML = `<div class="no-results">Digite um kanji válido</div>`;
-    return;
-  }
-
-  const indices = DATA.index[kanjiChar];
-  if (!indices || indices.length === 0) {
-    resultsEl.innerHTML = `<div class="no-results">Nenhuma palavra comum encontrada com <strong style="font-family:'Shippori Mincho',serif;font-size:20px;color:var(--ink)">${kanjiChar}</strong></div>`;
-    state.currentSearch = null;
-    return;
-  }
-
-  state.currentSearch = { kanji: kanjiChar, indices };
-  renderResults();
+  return out;
 }
 
-function renderResults() {
-  if (!state.currentSearch) return;
-  const { kanji, indices } = state.currentSearch;
-  const resultsEl = document.getElementById("explore-results");
+function getCurrentList() {
+  return state.lists.find(l => l.id === state.currentListId);
+}
 
-  // Sort: palavras mais "centrais" primeiro (onde o kanji aparece no início)
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  })[c]);
+}
+
+// ---------- LISTS VIEW ----------
+function renderLists() {
+  const ul = document.getElementById("list-of-lists");
+  ul.innerHTML = "";
+
+  if (state.lists.length === 0) {
+    document.getElementById("lists-empty").style.display = "block";
+    return;
+  }
+  document.getElementById("lists-empty").style.display = "none";
+
+  for (const list of state.lists) {
+    const li = document.createElement("li");
+    li.className = "list-card";
+    const preview = list.kanji.slice(0, 12).join(" ") + (list.kanji.length > 12 ? "…" : "");
+    li.innerHTML = `
+      <div>
+        <div class="list-name">${escapeHtml(list.name)}</div>
+        <div class="list-stats">${list.kanji.length} kanji · ${list.selected.length} palavras marcadas</div>
+        ${list.kanji.length ? `<div class="list-kanji-preview">${preview}</div>` : ""}
+      </div>
+      <span class="list-card-arrow">→</span>
+    `;
+    li.onclick = () => openList(list.id);
+    ul.appendChild(li);
+  }
+}
+
+function createList() {
+  const input = document.getElementById("new-list-name");
+  const name = input.value.trim();
+  if (!name) { toast("Dê um nome à lista", true); return; }
+  const list = {
+    id: genId(),
+    name,
+    kanji: [],
+    selected: [],
+    created: Date.now()
+  };
+  state.lists.push(list);
+  saveState();
+  input.value = "";
+  renderLists();
+  openList(list.id);
+}
+
+// ---------- LIST DETAIL ----------
+function openList(listId) {
+  state.currentListId = listId;
+  state.activeKanji = null;
+  const list = getCurrentList();
+  if (!list) return switchView("lists");
+  document.getElementById("list-detail-title").textContent = list.name;
+  renderListDetail();
+  switchView("list-detail");
+}
+
+function renderListDetail() {
+  const list = getCurrentList();
+  if (!list) return;
+
+  document.getElementById("list-detail-meta").textContent =
+    `— ${list.kanji.length} kanji · ${list.selected.length} palavras marcadas`;
+
+  renderKanjiChips();
+  document.getElementById("danger-zone").style.display = "block";
+  renderListResults();
+}
+
+function renderKanjiChips() {
+  const list = getCurrentList();
+  if (!list) return;
+  const chipsBlock = document.getElementById("kanji-chips-block");
+  const chipsEl = document.getElementById("kanji-chips");
+
+  if (list.kanji.length === 0) {
+    chipsBlock.style.display = "none";
+    return;
+  }
+  chipsBlock.style.display = "block";
+
+  chipsEl.innerHTML = list.kanji.map(k => {
+    const all = DATA.index[k] || [];
+    const sel = all.filter(i => list.selected.includes(i)).length;
+    return `<button class="kanji-chip${state.activeKanji === k ? ' active' : ''}" data-k="${k}">${k}${sel > 0 ? `<span class="chip-count">${sel}</span>` : ''}<span class="chip-remove" data-remove="${k}">×</span></button>`;
+  }).join('');
+
+  chipsEl.querySelectorAll(".kanji-chip").forEach(c => {
+    c.onclick = (e) => {
+      if (e.target.dataset.remove) {
+        e.stopPropagation();
+        removeKanjiFromList(e.target.dataset.remove);
+        return;
+      }
+      selectKanjiInList(c.dataset.k);
+    };
+  });
+}
+
+function addKanjiToList() {
+  const list = getCurrentList();
+  if (!list) return;
+  const input = document.getElementById("add-kanji-input");
+  const extracted = extractKanji(input.value);
+  if (extracted.length === 0) {
+    toast("Nenhum kanji válido encontrado", true);
+    return;
+  }
+  let added = 0;
+  const newOnes = [];
+  for (const k of extracted) {
+    if (!list.kanji.includes(k)) {
+      list.kanji.push(k);
+      newOnes.push(k);
+      added++;
+    }
+  }
+  saveState();
+  input.value = "";
+  if (added === 0) {
+    toast("Esses kanji já estão na lista");
+  } else if (added === 1) {
+    toast(`${newOnes[0]} adicionado`);
+    selectKanjiInList(newOnes[0]);
+  } else {
+    toast(`${added} kanji adicionados`);
+    renderListDetail();
+  }
+}
+
+function removeKanjiFromList(kanji) {
+  const list = getCurrentList();
+  if (!list) return;
+  if (!confirm(`Remover ${kanji} desta lista?\n(As palavras marcadas continuam na lista.)`)) return;
+  list.kanji = list.kanji.filter(k => k !== kanji);
+  if (state.activeKanji === kanji) state.activeKanji = null;
+  saveState();
+  renderListDetail();
+}
+
+function selectKanjiInList(kanji) {
+  state.activeKanji = kanji;
+  renderListDetail();
+  setTimeout(() => {
+    const el = document.getElementById("explore-results");
+    if (el && el.firstChild) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, 100);
+}
+
+function deleteList() {
+  const list = getCurrentList();
+  if (!list) return;
+  if (!confirm(`Excluir a lista "${list.name}"?\n${list.kanji.length} kanji e ${list.selected.length} palavras marcadas serão perdidos.`)) return;
+  state.lists = state.lists.filter(l => l.id !== list.id);
+  state.currentListId = null;
+  state.activeKanji = null;
+  saveState();
+  renderLists();
+  switchView("lists");
+  toast("Lista excluída");
+}
+
+// ---------- RESULTS (palavras do kanji ativo) ----------
+function renderListResults() {
+  const resultsEl = document.getElementById("explore-results");
+  const list = getCurrentList();
+  if (!list || !state.activeKanji) {
+    resultsEl.innerHTML = "";
+    return;
+  }
+  const kanji = state.activeKanji;
+  const indices = DATA.index[kanji];
+  if (!indices || indices.length === 0) {
+    resultsEl.innerHTML = `<div class="no-results">Nenhuma palavra comum com <strong style="font-family:'Shippori Mincho',serif;font-size:20px;color:var(--ink)">${kanji}</strong></div>`;
+    return;
+  }
+
   const sorted = [...indices].sort((a, b) => {
     const wa = DATA.words[a].k;
     const wb = DATA.words[b].k;
@@ -138,7 +306,7 @@ function renderResults() {
     return wa.length - wb.length;
   });
 
-  const selectedSet = new Set(state.selected);
+  const selectedSet = new Set(list.selected);
   const allSelected = sorted.every(i => selectedSet.has(i));
 
   let html = `
@@ -153,113 +321,153 @@ function renderResults() {
   for (const i of sorted) {
     const w = DATA.words[i];
     const isSel = selectedSet.has(i);
-    // Destaca o kanji buscado na palavra
     const highlighted = w.k.split('').map(c =>
-      c === kanji
-        ? `<span style="color:var(--hanko)">${c}</span>`
-        : c
+      c === kanji ? `<span style="color:var(--hanko)">${c}</span>` : c
     ).join('');
     html += `
       <div class="result-item" data-idx="${i}">
         <div>
           <div class="word">${highlighted}</div>
-          <div class="sub"><span class="reading">${w.r || ''}</span>${w.r ? ' · ' : ''}${w.m}</div>
+          <div class="sub"><span class="reading">${w.r || ''}</span>${w.r ? ' · ' : ''}${escapeHtml(w.m)}</div>
         </div>
-        <button class="heart-btn ${isSel ? 'selected' : ''}" data-idx="${i}" aria-label="Marcar para estudo">${isSel ? '♥' : '♡'}</button>
+        <button class="heart-btn ${isSel ? 'selected' : ''}" data-idx="${i}" aria-label="Marcar">${isSel ? '♥' : '♡'}</button>
       </div>
     `;
   }
 
   resultsEl.innerHTML = html;
 
-  // Wire heart buttons
   resultsEl.querySelectorAll(".heart-btn").forEach(btn => {
     btn.onclick = (e) => {
       e.stopPropagation();
-      toggleSelected(parseInt(btn.dataset.idx));
+      toggleWordInCurrentList(parseInt(btn.dataset.idx));
     };
   });
 
-  // Select-all button
   const selBtn = document.getElementById("select-all-btn");
   if (selBtn) {
     selBtn.onclick = () => {
-      const selectedSet2 = new Set(state.selected);
-      const allSel2 = sorted.every(i => selectedSet2.has(i));
+      const list2 = getCurrentList();
+      const set2 = new Set(list2.selected);
+      const allSel2 = sorted.every(i => set2.has(i));
       if (allSel2) {
-        // desmarca todas essas
-        state.selected = state.selected.filter(i => !sorted.includes(i));
-        toast(`${sorted.length} palavras removidas`);
+        list2.selected = list2.selected.filter(i => !sorted.includes(i));
+        toast(`${sorted.length} palavras desmarcadas`);
       } else {
-        // marca todas
         for (const i of sorted) {
-          if (!selectedSet2.has(i)) state.selected.push(i);
+          if (!set2.has(i)) list2.selected.push(i);
         }
-        toast(`${sorted.length} palavras na lista`);
+        toast(`${sorted.length} palavras marcadas`);
       }
       saveState();
-      renderResults();
-      renderSetupStats();
+      renderListDetail();
     };
   }
 }
 
-function toggleSelected(idx) {
-  const i = state.selected.indexOf(idx);
-  if (i === -1) {
-    state.selected.push(idx);
-  } else {
-    state.selected.splice(i, 1);
-  }
+function toggleWordInCurrentList(wordIdx) {
+  const list = getCurrentList();
+  if (!list) return;
+  const i = list.selected.indexOf(wordIdx);
+  if (i === -1) list.selected.push(wordIdx);
+  else list.selected.splice(i, 1);
   saveState();
-  // Atualiza só o coração desse item, evita re-renderizar tudo
-  const btn = document.querySelector(`.heart-btn[data-idx="${idx}"]`);
+
+  // Atualiza UI sem re-renderizar tudo
+  const btn = document.querySelector(`.heart-btn[data-idx="${wordIdx}"]`);
   if (btn) {
-    const isSel = state.selected.includes(idx);
+    const isSel = list.selected.includes(wordIdx);
     btn.classList.toggle("selected", isSel);
     btn.textContent = isSel ? "♥" : "♡";
   }
-  renderSetupStats();
-  // Atualiza botão "marcar todas" se necessário
-  if (state.currentSearch) {
-    const selectedSet = new Set(state.selected);
-    const allSelected = state.currentSearch.indices.every(i => selectedSet.has(i));
+
+  document.getElementById("list-detail-meta").textContent =
+    `— ${list.kanji.length} kanji · ${list.selected.length} palavras marcadas`;
+
+  renderKanjiChips();
+
+  // Atualiza botão "marcar todas" se houver
+  const kanji = state.activeKanji;
+  if (kanji) {
+    const indices = DATA.index[kanji] || [];
+    const set = new Set(list.selected);
+    const allSel = indices.every(i => set.has(i));
     const selBtn = document.getElementById("select-all-btn");
-    if (selBtn) selBtn.textContent = (allSelected ? "Desmarcar" : "Marcar") + " todas";
+    if (selBtn) selBtn.textContent = (allSel ? "Desmarcar" : "Marcar") + " todas";
   }
+}
+
+// ---------- SETUP ----------
+function renderSetupSelect() {
+  const sel = document.getElementById("source-select");
+  sel.innerHTML = "";
+
+  const unionSet = new Set();
+  for (const l of state.lists) for (const i of l.selected) unionSet.add(i);
+  const totalUnion = unionSet.size;
+
+  const optAll = document.createElement("option");
+  optAll.value = "all";
+  optAll.textContent = `Todas as listas (${totalUnion} palavras)`;
+  sel.appendChild(optAll);
+
+  for (const l of state.lists) {
+    const opt = document.createElement("option");
+    opt.value = l.id;
+    opt.textContent = `${l.name} (${l.selected.length} palavras)`;
+    sel.appendChild(opt);
+  }
+
+  const wanted = state.config.source;
+  if (wanted === "all" || state.lists.find(l => l.id === wanted)) {
+    sel.value = wanted;
+  } else {
+    sel.value = "all";
+    state.config.source = "all";
+  }
+
+  updateSetupStats();
+}
+
+function getQuizPool() {
+  if (state.config.source === "all") {
+    const set = new Set();
+    for (const l of state.lists) for (const i of l.selected) set.add(i);
+    return [...set];
+  }
+  const list = state.lists.find(l => l.id === state.config.source);
+  return list ? [...list.selected] : [];
+}
+
+function updateSetupStats() {
+  document.getElementById("stat-selected").textContent = getQuizPool().length;
 }
 
 // ---------- QUIZ ----------
 function startQuiz() {
-  if (state.selected.length < 4) {
-    toast(`Precisa de ao menos 4 palavras na lista (tem ${state.selected.length})`, true);
+  const poolIds = getQuizPool();
+  if (poolIds.length < 4) {
+    toast(`Precisa de pelo menos 4 palavras (tem ${poolIds.length})`, true);
     return;
   }
 
-  const pool = state.selected.map(i => ({ ...DATA.words[i], _id: i }));
-  const length = state.config.length === 0
-    ? Infinity
-    : Math.min(state.config.length, pool.length);
+  const pool = poolIds.map(i => ({ ...DATA.words[i], _id: i }));
+  const length = state.config.length === 0 ? Infinity : Math.min(state.config.length, pool.length);
   const questions = state.config.length === 0 ? pool : shuffle(pool).slice(0, length);
 
   state.quiz = {
-    pool,
-    questions,
-    index: 0,
-    correct: 0,
+    pool, questions,
+    index: 0, correct: 0,
     total: state.config.length === 0 ? Infinity : length,
     answered: false
   };
-
   switchView("quiz");
   renderQuestion();
 }
 
 function renderQuestion() {
   const q = state.quiz;
-  const target = state.config.length === 0
-    ? pick(q.pool)
-    : q.questions[q.index];
+  const target = state.config.length === 0 ? pick(q.pool) : q.questions[q.index];
 
   let mode = state.config.mode;
   if (mode === "mixed") mode = Math.random() < 0.5 ? "meaning" : "reading";
@@ -281,16 +489,12 @@ function renderQuestion() {
   document.getElementById("prompt-mode").textContent =
     mode === "meaning" ? "qual o significado?" : "qual a leitura?";
 
-  // Gera distratores. Estratégia:
-  //   1. Primeiro tenta distratores DA PRÓPRIA LISTA SELECIONADA (mais relevante)
-  //   2. Se não houver suficientes (pool pequeno), usa distratores do dicionário inteiro
   const answerField = mode === "meaning" ? "m" : "r";
   const correctAnswer = target[answerField];
 
   const seen = new Set([correctAnswer]);
   const distractors = [];
 
-  // 1ª tentativa: do pool selecionado
   for (const w of shuffle(q.pool)) {
     if (w._id === target._id) continue;
     const val = w[answerField];
@@ -300,21 +504,13 @@ function renderQuestion() {
     if (distractors.length >= 3) break;
   }
 
-  // 2ª tentativa: do dicionário inteiro (se faltou)
   if (distractors.length < 3) {
-    const allIndices = [];
-    for (let i = 0; i < DATA.words.length; i++) allIndices.push(i);
-    // Amostragem rápida (300 aleatórios em vez de embaralhar tudo)
-    const sample = [];
-    for (let i = 0; i < 300; i++) {
-      sample.push(DATA.words[Math.floor(Math.random() * DATA.words.length)]);
-    }
-    for (const w of sample) {
+    for (let i = 0; i < 300 && distractors.length < 3; i++) {
+      const w = DATA.words[Math.floor(Math.random() * DATA.words.length)];
       const val = w[answerField];
       if (!val || seen.has(val)) continue;
       seen.add(val);
       distractors.push(val);
-      if (distractors.length >= 3) break;
     }
   }
 
@@ -329,7 +525,7 @@ function renderQuestion() {
     const btn = document.createElement("button");
     btn.className = "option";
     const numLabel = ["①", "②", "③", "④"][idx];
-    btn.innerHTML = `<span class="option-num">${numLabel}</span><span>${opt.text}</span>`;
+    btn.innerHTML = `<span class="option-num">${numLabel}</span><span>${escapeHtml(opt.text)}</span>`;
     btn.onclick = () => answerQuestion(btn, opt, options);
     optsEl.appendChild(btn);
   });
@@ -356,7 +552,7 @@ function answerQuestion(btnEl, opt, options) {
   const fb = document.getElementById("feedback");
   let html = `<span class="jp">${t.k}</span>`;
   if (t.r) html += ` · <span class="jp">${t.r}</span>`;
-  if (t.m) html += ` · <strong>${t.m}</strong>`;
+  if (t.m) html += ` · <strong>${escapeHtml(t.m)}</strong>`;
   fb.innerHTML = html;
   fb.classList.add("show");
 
@@ -400,95 +596,23 @@ function quitQuiz() {
   switchView("setup");
 }
 
-// ---------- LIST ----------
-function renderWordList() {
-  const ul = document.getElementById("word-list");
-  ul.innerHTML = "";
-
-  if (state.selected.length === 0) {
-    document.getElementById("list-empty").style.display = "block";
-    return;
-  }
-  document.getElementById("list-empty").style.display = "none";
-
-  state.selected.forEach(idx => {
-    const w = DATA.words[idx];
-    if (!w) return;
-    const li = document.createElement("li");
-    li.className = "word-item";
-    li.innerHTML = `
-      <div>
-        <div class="word-main">${w.k}</div>
-        <div class="word-sub">
-          ${w.r ? `<span class="reading">${w.r}</span>` : ""}
-          ${w.r && w.m ? " · " : ""}
-          ${w.m || ""}
-        </div>
-      </div>
-      <button class="word-delete" data-idx="${idx}">Remover</button>
-    `;
-    ul.appendChild(li);
-  });
-
-  ul.querySelectorAll(".word-delete").forEach(btn => {
-    btn.onclick = () => {
-      const idx = parseInt(btn.dataset.idx);
-      const i = state.selected.indexOf(idx);
-      if (i !== -1) {
-        state.selected.splice(i, 1);
-        saveState();
-        renderWordList();
-        renderSetupStats();
-      }
-    };
-  });
-}
-
-function clearList() {
-  if (state.selected.length === 0) return;
-  if (!confirm(`Remover todas as ${state.selected.length} palavras da lista?`)) return;
-  state.selected = [];
-  saveState();
-  renderWordList();
-  renderSetupStats();
-  toast("Lista limpa");
-}
-
-function exportList() {
-  if (state.selected.length === 0) {
-    toast("Lista vazia", true);
-    return;
-  }
-  const lines = state.selected.map(i => {
-    const w = DATA.words[i];
-    return `${w.k}\t${w.r || ''}\t${w.m || ''}`;
-  });
-  const text = "kanji\tleitura\tsignificado\n" + lines.join("\n");
-  navigator.clipboard.writeText(text).then(
-    () => toast(`${state.selected.length} palavras copiadas (TSV)`),
-    () => toast("Erro ao copiar", true)
-  );
-}
-
-function renderSetupStats() {
-  document.getElementById("stat-selected").textContent = state.selected.length;
-}
-
 // ---------- VIEW SWITCHING ----------
 function switchView(name) {
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
   document.getElementById(name + "-view").classList.add("active");
 
-  if (["explore", "setup", "list"].includes(name)) {
-    document.querySelectorAll(".tab").forEach(t => {
+  document.querySelectorAll(".tab").forEach(t => {
+    if (name === "list-detail") {
+      t.classList.toggle("active", t.dataset.view === "lists");
+    } else if (["quiz", "result"].includes(name)) {
+      t.classList.remove("active");
+    } else {
       t.classList.toggle("active", t.dataset.view === name);
-    });
-  } else {
-    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-  }
+    }
+  });
 
-  if (name === "list") renderWordList();
-  if (name === "setup") renderSetupStats();
+  if (name === "lists") renderLists();
+  if (name === "setup") renderSetupSelect();
 }
 
 // ---------- INIT ----------
@@ -501,14 +625,26 @@ async function init() {
     tab.onclick = () => switchView(tab.dataset.view);
   });
 
-  // Explore
-  const kanjiInput = document.getElementById("kanji-input");
-  kanjiInput.addEventListener("input", (e) => searchByKanji(e.target.value));
-  kanjiInput.addEventListener("paste", (e) => {
-    setTimeout(() => searchByKanji(e.target.value), 10);
+  // Lists view
+  document.getElementById("create-list-btn").onclick = createList;
+  document.getElementById("new-list-name").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") createList();
   });
 
-  // Setup choices
+  // List detail
+  document.getElementById("back-to-lists").onclick = () => switchView("lists");
+  document.getElementById("add-kanji-btn").onclick = addKanjiToList;
+  document.getElementById("add-kanji-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") addKanjiToList();
+  });
+  document.getElementById("delete-list-btn").onclick = deleteList;
+
+  // Setup
+  document.getElementById("source-select").addEventListener("change", (e) => {
+    state.config.source = e.target.value;
+    saveState();
+    updateSetupStats();
+  });
   document.getElementById("mode-choices").querySelectorAll(".choice").forEach(c => {
     if (c.dataset.mode === state.config.mode) {
       c.parentElement.querySelectorAll(".choice").forEach(x => x.classList.remove("selected"));
@@ -534,15 +670,11 @@ async function init() {
     };
   });
 
-  // Quiz buttons
+  // Quiz
   document.getElementById("start-btn").onclick = startQuiz;
   document.getElementById("next-btn").onclick = nextQuestion;
   document.getElementById("quit-btn").onclick = quitQuiz;
   document.getElementById("restart-btn").onclick = () => switchView("setup");
-
-  // List buttons
-  document.getElementById("clear-list-btn").onclick = clearList;
-  document.getElementById("export-btn").onclick = exportList;
 
   // Keyboard
   document.addEventListener("keydown", (e) => {
@@ -560,7 +692,7 @@ async function init() {
     }
   });
 
-  renderSetupStats();
+  renderLists();
 }
 
 document.addEventListener("DOMContentLoaded", init);

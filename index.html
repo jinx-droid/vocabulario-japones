@@ -29,25 +29,52 @@
 </header>
 
 <nav class="tabs" role="tablist">
-  <button class="tab active" data-view="explore">Explorar</button>
+  <button class="tab active" data-view="lists">Listas</button>
   <button class="tab" data-view="setup">Estudar</button>
-  <button class="tab" data-view="list">Lista</button>
 </nav>
 
 <main>
 
-<!-- EXPLORE VIEW -->
-<section id="explore-view" class="view active">
-  <h2>Buscar palavras por kanji</h2>
-  <p class="section-meta">— digite um kanji e veja todas as palavras que o usam</p>
+<!-- LISTS VIEW (suas listas de kanji) -->
+<section id="lists-view" class="view active">
+  <h2>Minhas listas de kanji</h2>
+  <p class="section-meta">— organize kanji em listas e marque palavras pra estudar</p>
 
   <div class="config-block">
-    <div class="config-label">Kanji</div>
-    <input type="text" id="kanji-input" class="jp big" placeholder="Ex: 図" maxlength="1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-    <div class="search-hint" id="search-hint">Cole ou digite UM kanji para ver as palavras que o utilizam</div>
+    <div class="config-label">Nova lista</div>
+    <input type="text" id="new-list-name" placeholder="Ex: JLPT N5 - lição 3" autocomplete="off">
+    <button class="btn-primary" id="create-list-btn" style="margin-top: 10px;">Criar lista</button>
+  </div>
+
+  <ul class="list-of-lists" id="list-of-lists"></ul>
+  <div class="empty-state" id="lists-empty" style="display:none">
+    Nenhuma lista ainda.<br>
+    Crie uma acima para começar.
+  </div>
+</section>
+
+<!-- LIST DETAIL VIEW (gerenciar uma lista específica) -->
+<section id="list-detail-view" class="view">
+  <button class="back-btn" id="back-to-lists">← Listas</button>
+  <h2 id="list-detail-title">Lista</h2>
+  <p class="section-meta" id="list-detail-meta">— 0 kanji · 0 palavras marcadas</p>
+
+  <div class="config-block">
+    <div class="config-label">Adicionar kanji a esta lista</div>
+    <input type="text" id="add-kanji-input" class="jp" placeholder="Cole vários (ex: 日月火水木) ou digite um por vez" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <button class="btn-primary" id="add-kanji-btn" style="margin-top: 10px;">Adicionar</button>
+  </div>
+
+  <div class="config-block" id="kanji-chips-block" style="display:none">
+    <div class="config-label">Kanji nesta lista <span class="hint-soft">— toque para ver palavras</span></div>
+    <div class="kanji-chips" id="kanji-chips"></div>
   </div>
 
   <div id="explore-results"></div>
+
+  <div class="danger-zone" id="danger-zone" style="display:none">
+    <button class="btn-danger" id="delete-list-btn">Excluir esta lista</button>
+  </div>
 </section>
 
 <!-- SETUP VIEW -->
@@ -56,7 +83,15 @@
   <p class="section-meta">— escolha opções e comece o quiz</p>
 
   <div class="config-block">
-    <div class="config-label">01 · Tipo de pergunta</div>
+    <div class="config-label">01 · Fonte das palavras</div>
+    <select id="source-select" class="select-input"></select>
+    <div class="stats" id="setup-stats" style="margin-top: 10px;">
+      <span><strong id="stat-selected">0</strong> palavras disponíveis</span>
+    </div>
+  </div>
+
+  <div class="config-block">
+    <div class="config-label">02 · Tipo de pergunta</div>
     <div class="choice-row" id="mode-choices">
       <button class="choice selected" data-mode="meaning">Significado</button>
       <button class="choice" data-mode="reading">Leitura</button>
@@ -65,20 +100,13 @@
   </div>
 
   <div class="config-block">
-    <div class="config-label">02 · Quantidade</div>
+    <div class="config-label">03 · Quantidade</div>
     <div class="choice-row" id="length-choices">
       <button class="choice" data-length="5">5</button>
       <button class="choice selected" data-length="10">10</button>
       <button class="choice" data-length="20">20</button>
       <button class="choice" data-length="50">50</button>
       <button class="choice" data-length="0">∞</button>
-    </div>
-  </div>
-
-  <div class="config-block">
-    <div class="config-label">03 · Fonte</div>
-    <div class="stats" id="setup-stats">
-      <span>Sua lista: <strong id="stat-selected">0</strong> palavras</span>
     </div>
   </div>
 
@@ -118,22 +146,7 @@
   <button class="next-btn" id="restart-btn" style="margin-top: 18px;">Nova sessão</button>
 </section>
 
-<!-- LIST VIEW -->
-<section id="list-view" class="view">
-  <h2>Minha lista de estudo</h2>
-  <p class="section-meta">— palavras que você marcou para estudar</p>
 
-  <div class="list-actions">
-    <button class="btn-secondary" id="clear-list-btn">Limpar lista</button>
-    <button class="btn-secondary" id="export-btn">Exportar</button>
-  </div>
-
-  <ul class="word-list" id="word-list"></ul>
-  <div class="empty-state" id="list-empty" style="display:none">
-    Nenhuma palavra ainda.<br>
-    Vá em "Explorar", busque por um kanji, e marque palavras com ❤
-  </div>
-</section>
 
 </main>
 
