@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#f5f2ea">
+<title>語彙 — Vocabulário</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;600;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="loading-screen" id="loading">
+  <div class="loading-stamp">読</div>
+  <div class="loading-text">Carregando dicionário…</div>
+  <div class="loading-progress" id="loading-progress">0%</div>
+</div>
+
+<header>
+  <div class="logo">
+    <span class="logo-jp">語彙クイズ</span>
+    <span class="logo-pt">Vocabulário · Múltipla escolha</span>
+  </div>
+  <div class="stamp">学習</div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button class="tab active" data-view="explore">Explorar</button>
+  <button class="tab" data-view="setup">Estudar</button>
+  <button class="tab" data-view="list">Lista</button>
+</nav>
+
+<main>
+
+<!-- EXPLORE VIEW -->
+<section id="explore-view" class="view active">
+  <h2>Buscar palavras por kanji</h2>
+  <p class="section-meta">— digite um kanji e veja todas as palavras que o usam</p>
+
+  <div class="config-block">
+    <div class="config-label">Kanji</div>
+    <input type="text" id="kanji-input" class="jp big" placeholder="Ex: 図" maxlength="1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <div class="search-hint" id="search-hint">Cole ou digite UM kanji para ver as palavras que o utilizam</div>
+  </div>
+
+  <div id="explore-results"></div>
+</section>
+
+<!-- SETUP VIEW -->
+<section id="setup-view" class="view">
+  <h2>Configurar sessão</h2>
+  <p class="section-meta">— escolha opções e comece o quiz</p>
+
+  <div class="config-block">
+    <div class="config-label">01 · Tipo de pergunta</div>
+    <div class="choice-row" id="mode-choices">
+      <button class="choice selected" data-mode="meaning">Significado</button>
+      <button class="choice" data-mode="reading">Leitura</button>
+      <button class="choice" data-mode="mixed">Misto</button>
+    </div>
+  </div>
+
+  <div class="config-block">
+    <div class="config-label">02 · Quantidade</div>
+    <div class="choice-row" id="length-choices">
+      <button class="choice" data-length="5">5</button>
+      <button class="choice selected" data-length="10">10</button>
+      <button class="choice" data-length="20">20</button>
+      <button class="choice" data-length="50">50</button>
+      <button class="choice" data-length="0">∞</button>
+    </div>
+  </div>
+
+  <div class="config-block">
+    <div class="config-label">03 · Fonte</div>
+    <div class="stats" id="setup-stats">
+      <span>Sua lista: <strong id="stat-selected">0</strong> palavras</span>
+    </div>
+  </div>
+
+  <button class="start-btn" id="start-btn">Iniciar 始める</button>
+</section>
+
+<!-- QUIZ VIEW -->
+<section id="quiz-view" class="view">
+  <div class="quiz-meta">
+    <button class="quit-btn" id="quit-btn">Sair</button>
+    <div class="score-display">
+      <span id="quiz-progress">1/10</span> · <strong id="quiz-score">0</strong> acertos
+    </div>
+  </div>
+
+  <div class="prompt-card">
+    <span class="prompt-label" id="prompt-label">Palavra</span>
+    <div class="prompt-word" id="prompt-word">—</div>
+    <div class="prompt-mode" id="prompt-mode">qual o significado?</div>
+  </div>
+
+  <div class="options" id="options"></div>
+
+  <div class="feedback" id="feedback"></div>
+
+  <button class="next-btn" id="next-btn" style="display:none">Próxima →</button>
+</section>
+
+<!-- RESULT VIEW -->
+<section id="result-view" class="view">
+  <div class="result-card">
+    <div class="result-stamp" id="result-stamp">合格</div>
+    <div class="result-label" id="result-label">Sessão concluída</div>
+    <div class="result-score"><span id="result-correct">0</span> / <span id="result-total">0</span></div>
+    <div class="result-score-label" id="result-percent">0%</div>
+  </div>
+  <button class="next-btn" id="restart-btn" style="margin-top: 18px;">Nova sessão</button>
+</section>
+
+<!-- LIST VIEW -->
+<section id="list-view" class="view">
+  <h2>Minha lista de estudo</h2>
+  <p class="section-meta">— palavras que você marcou para estudar</p>
+
+  <div class="list-actions">
+    <button class="btn-secondary" id="clear-list-btn">Limpar lista</button>
+    <button class="btn-secondary" id="export-btn">Exportar</button>
+  </div>
+
+  <ul class="word-list" id="word-list"></ul>
+  <div class="empty-state" id="list-empty" style="display:none">
+    Nenhuma palavra ainda.<br>
+    Vá em "Explorar", busque por um kanji, e marque palavras com ❤
+  </div>
+</section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
