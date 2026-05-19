@@ -46,10 +46,30 @@
     <button class="btn-primary" id="create-list-btn" style="margin-top: 10px;">Criar lista</button>
   </div>
 
+  <div class="config-block">
+    <div class="config-label">Backup</div>
+    <div class="backup-actions">
+      <button class="btn-secondary" id="export-btn">Exportar tudo</button>
+      <button class="btn-secondary" id="import-btn">Importar…</button>
+      <input type="file" id="import-file" accept=".json,application/json" style="display:none">
+    </div>
+    <p class="hint-soft" style="margin-top: 10px;">Use para sincronizar entre dispositivos: exporte aqui, abra o arquivo no outro celular/computador e importe.</p>
+  </div>
+
   <ul class="list-of-lists" id="list-of-lists"></ul>
   <div class="empty-state" id="lists-empty" style="display:none">
     Nenhuma lista ainda.<br>
     Crie uma acima para começar.
+  </div>
+
+  <div class="sync-block">
+    <div class="config-label">Sincronizar entre dispositivos</div>
+    <p class="hint-text">Exporte tudo num arquivo. Importe esse arquivo em outro dispositivo para sincronizar listas, palavras marcadas e estatísticas.</p>
+    <div class="sync-actions">
+      <button class="btn-secondary" id="export-btn">↓ Exportar tudo</button>
+      <button class="btn-secondary" id="import-btn">↑ Importar arquivo</button>
+      <input type="file" id="import-file" accept=".json,application/json" style="display:none">
+    </div>
   </div>
 </section>
 
@@ -91,7 +111,15 @@
   </div>
 
   <div class="config-block">
-    <div class="config-label">02 · Tipo de pergunta</div>
+    <div class="config-label">02 · Direção</div>
+    <div class="choice-row" id="direction-choices">
+      <button class="choice selected" data-direction="k2m">Kanji → Sig./Leitura</button>
+      <button class="choice" data-direction="m2k">Sig./Leitura → Kanji</button>
+    </div>
+  </div>
+
+  <div class="config-block">
+    <div class="config-label">03 · Tipo de pergunta</div>
     <div class="choice-row" id="mode-choices">
       <button class="choice selected" data-mode="meaning">Significado</button>
       <button class="choice" data-mode="reading">Leitura</button>
@@ -100,13 +128,21 @@
   </div>
 
   <div class="config-block">
-    <div class="config-label">03 · Quantidade</div>
+    <div class="config-label">04 · Quantidade</div>
     <div class="choice-row" id="length-choices">
       <button class="choice" data-length="5">5</button>
       <button class="choice selected" data-length="10">10</button>
       <button class="choice" data-length="20">20</button>
       <button class="choice" data-length="50">50</button>
       <button class="choice" data-length="0">∞</button>
+    </div>
+  </div>
+
+  <div class="config-block">
+    <div class="config-label">05 · Modo de prática</div>
+    <div class="choice-row" id="srs-choices">
+      <button class="choice selected" data-srs="true">SRS leve <span class="hint-soft">(prioriza erros)</span></button>
+      <button class="choice" data-srs="false">Aleatório</button>
     </div>
   </div>
 
