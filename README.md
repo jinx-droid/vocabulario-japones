@@ -1,58 +1,45 @@
-# 語彙クイズ — Vocabulário Quiz (v3)
+# 語彙クイズ — Vocabulário Quiz (v4)
 
 Web app de quiz de vocabulário japonês, organizado por listas pessoais de kanji.
 
-## Novidades da v3
+## Novidades da v4
 
-- **Múltiplos significados visíveis**: palavras com vários sentidos exibem todos
-  ao explorar e ao receber o feedback do quiz.
-- **SRS leve**: o quiz prioriza palavras que você errou ou nunca viu, evitando
-  desperdiçar tempo com palavras já dominadas. Pode ser desligado nas opções.
-- **Direção inversa**: além do tradicional kanji → significado/leitura, agora
-  tem significado/leitura → kanji (recall ativo).
-- **Backup/sync via arquivo**: exporte um JSON com tudo (listas, palavras
-  marcadas, estatísticas), importe em outro dispositivo. Sincronização manual.
+- **Indicador visual de domínio**: cada palavra mostra uma bolinha colorida:
+  • sem cor = nunca vista
+  • amarela = vista, mas inconsistente
+  • verde = dominada (≥3 acertos com taxa ≥80%)
+  • vermelha = erra mais do que acerta
+- **Filtro "Só erradas"** na configuração de quiz: pratica apenas palavras
+  com pelo menos um erro registrado. Útil para revisão focada.
+- **Lembrar último estado**: ao reabrir o app, retoma na última lista
+  e kanji que você estava vendo.
+
+## Outras features (vindas da v3)
+
+- Múltiplos significados visíveis.
+- SRS leve (peso por acertos/erros).
+- Direção inversa do quiz (significado → kanji).
+- Backup/sync via arquivo JSON (Listas → Exportar tudo / Importar).
 
 ## Fluxo de uso
 
 1. **Listas** → criar uma lista (ex: "JLPT N5 - lição 3").
 2. Adicionar kanji à lista (cole um bloco ou um por vez).
 3. Tocar em cada kanji → marcar com ♡ as palavras a estudar.
-4. **Estudar** → escolher fonte, direção, modo e quantidade.
-5. Quiz mostra acerto/erro com feedback rico (todos os significados, leitura).
+4. **Estudar** → configurar fonte, direção, modo, filtro, quantidade.
+5. Quiz mostra acerto/erro com feedback rico.
 
-## Backup entre dispositivos
+## Hospedagem
 
-- **Exportar**: na aba Listas, botão "Exportar tudo" → baixa um arquivo
-  `vocab-backup-AAAA-MM-DD.json`.
-- **Importar**: no outro dispositivo, transfira o arquivo (Drive, e-mail,
-  AirDrop, etc.) e use "Importar…". Opção de mesclar ou substituir.
-
-## Estrutura técnica
-
-```
-words.json   18.000 palavras (JMdict eng-common), ~1.9 MB
-index.json   índice kanji → palavras, ~210 KB
-app.js       lógica do app
-style.css    visual editorial japonês
-index.html   estrutura
-```
-
-JMdict mantido pelo EDRDG, licença CC BY-SA 4.0.
-
-## Hospedagem no GitHub Pages
-
-1. Repositório público no GitHub.
-2. Upload de: `index.html`, `style.css`, `app.js`, `words.json`, `index.json`.
-3. Settings → Pages → branch `main`, pasta `/(root)`.
-4. URL fica acessível após 1-2 minutos.
+Suba os 5 arquivos (`index.html`, `style.css`, `app.js`, `words.json`,
+`index.json`) num repositório público no GitHub. Settings → Pages →
+branch `main`, pasta `/(root)`. Após 1-2 minutos, URL acessível.
 
 ## Privacidade
 
-Tudo em `localStorage` do navegador. O arquivo de backup é gerado e
-lido localmente — nada é enviado para servidor externo.
+Tudo em `localStorage`. Backup só é gerado/lido localmente.
 
-## Atalhos de teclado (no quiz)
+## Atalhos (quiz)
 
-- `1`-`4`: escolher alternativa
-- `Espaço` / `Enter`: próxima pergunta
+- `1`-`4`: alternativa
+- `Espaço` / `Enter`: próxima

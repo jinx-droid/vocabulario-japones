@@ -19,8 +19,11 @@ let state = {
     direction: "k2m",     // k2m (kanji→significado/leitura) | m2k (significado→kanji)
     length: 10,
     source: "all",
-    srs: true             // usa peso de SRS no sorteio
+    srs: true,            // usa peso de SRS no sorteio
+    practice: "all"       // all | wrong-only — filtra pool antes do sorteio
   },
+  // Última posição: usada para retomar onde parou ao reabrir o app
+  lastView: { view: "lists", listId: null, kanji: null },
   currentListId: null,
   activeKanji: null,
   quiz: null
@@ -32,7 +35,8 @@ function saveState() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       lists: state.lists,
       stats: state.stats,
-      config: state.config
+      config: state.config,
+      lastView: state.lastView
     }));
   } catch (e) { toast("Não foi possível salvar", true); }
 }
@@ -45,6 +49,9 @@ function loadState() {
     if (Array.isArray(parsed.lists)) state.lists = parsed.lists;
     if (parsed.stats && typeof parsed.stats === 'object') state.stats = parsed.stats;
     if (parsed.config) state.config = { ...state.config, ...parsed.config };
+    if (parsed.lastView && typeof parsed.lastView === 'object') {
+      state.lastView = { ...state.lastView, ...parsed.lastView };
+    }
   } catch (e) { console.warn(e); }
 }
 
@@ -146,6 +153,26 @@ function recordAnswer(wordIdx, correct) {
   else s.w = (s.w || 0) + 1;
   s.ts = Date.now();
   state.stats[wordIdx] = s;
+}
+
+// Nível de domínio: "new" | "wrong" | "shaky" | "mastered"
+function getMasteryLevel(idx) {
+  const s = getWordStats(idx);
+  const total = s.c + s.w;
+  if (total === 0) return "new";
+  const ratio = s.c / total;
+  if (s.w > 0 && ratio < 0.5) return "wrong";       // erra mais do que acerta
+  if (s.c >= 3 && ratio >= 0.8) return "mastered";  // acertos consistentes
+  return "shaky";                                    // entre os dois
+}
+
+// Bolinha de status (HTML)
+function getMasteryDot(idx) {
+  const level = getMasteryLevel(idx);
+  if (level === "new") return `<span class="mastery-dot mastery-new" title="Nunca vista"></span>`;
+  const s = getWordStats(idx);
+  const title = `${s.c} acertos · ${s.w} erros`;
+  return `<span class="mastery-dot mastery-${level}" title="${title}"></span>`;
 }
 
 // Peso: maior = mais provável de aparecer
@@ -517,10 +544,11 @@ function renderListResults() {
     const meaningHtml = meanings.length > 1
       ? `<span class="meaning-main">${escapeHtml(meanings[0])}</span><span class="meaning-extra"> · ${escapeHtml(meanings.slice(1).join(' · '))}</span>`
       : `${escapeHtml(meanings[0] || '')}`;
+    const masteryHtml = getMasteryDot(i);
     html += `
       <div class="result-item" data-idx="${i}">
         <div>
-          <div class="word">${highlighted}</div>
+          <div class="word">${masteryHtml}${highlighted}</div>
           <div class="sub"><span class="reading">${w.r || ''}</span>${w.r ? ' · ' : ''}${meaningHtml}</div>
         </div>
         <button class="heart-btn ${isSel ? 'selected' : ''}" data-idx="${i}" aria-label="Marcar">${isSel ? '♥' : '♡'}</button>
@@ -623,24 +651,74 @@ function renderSetupSelect() {
 }
 
 function getQuizPool() {
+  let ids;
   if (state.config.source === "all") {
     const set = new Set();
     for (const l of state.lists) for (const i of l.selected) set.add(i);
-    return [...set];
+    ids = [...set];
+  } else {
+    const list = state.lists.find(l => l.id === state.config.source);
+    ids = list ? [...list.selected] : [];
   }
-  const list = state.lists.find(l => l.id === state.config.source);
-  return list ? [...list.selected] : [];
+  // Aplica filtro de prática
+  if (state.config.practice === "wrong-only") {
+    ids = ids.filter(i => {
+      const s = state.stats[i];
+      return s && s.w > 0;
+    });
+  }
+  return ids;
+}
+
+// Retorna { total, neverSeen, wrong, mastered } pra exibir no setup
+function getPoolBreakdown() {
+  // Base sem filtro de prática (precisamos do total real)
+  let baseIds;
+  if (state.config.source === "all") {
+    const set = new Set();
+    for (const l of state.lists) for (const i of l.selected) set.add(i);
+    baseIds = [...set];
+  } else {
+    const list = state.lists.find(l => l.id === state.config.source);
+    baseIds = list ? [...list.selected] : [];
+  }
+  let neverSeen = 0, wrong = 0, mastered = 0;
+  for (const i of baseIds) {
+    const s = state.stats[i];
+    if (!s || (s.c === 0 && s.w === 0)) neverSeen++;
+    else if (s.w > 0) wrong++;
+    else mastered++;
+  }
+  return { total: baseIds.length, neverSeen, wrong, mastered, filtered: getQuizPool().length };
 }
 
 function updateSetupStats() {
-  document.getElementById("stat-selected").textContent = getQuizPool().length;
+  const b = getPoolBreakdown();
+  const el = document.getElementById("stat-selected");
+  if (!el) return;
+  if (state.config.practice === "wrong-only") {
+    el.textContent = `${b.filtered} / ${b.total}`;
+    el.title = `${b.wrong} erradas · ${b.neverSeen} nunca vistas · ${b.mastered} dominadas`;
+  } else {
+    el.textContent = b.total;
+    el.title = `${b.wrong} erradas · ${b.neverSeen} nunca vistas · ${b.mastered} dominadas`;
+  }
+  // Atualiza a linha extra de breakdown se existir
+  const extra = document.getElementById("stat-breakdown");
+  if (extra) {
+    extra.textContent = `· ${b.wrong} erradas · ${b.neverSeen} nunca vistas · ${b.mastered} dominadas`;
+  }
 }
 
 // ---------- QUIZ ----------
 function startQuiz() {
   const poolIds = getQuizPool();
   if (poolIds.length < 4) {
-    toast(`Precisa de pelo menos 4 palavras (tem ${poolIds.length})`, true);
+    if (state.config.practice === "wrong-only") {
+      toast(`Só ${poolIds.length} erradas. Mude o filtro para "Todas" ou pratique mais.`, true);
+    } else {
+      toast(`Precisa de pelo menos 4 palavras (tem ${poolIds.length})`, true);
+    }
     return;
   }
 
@@ -874,6 +952,37 @@ function switchView(name) {
 
   if (name === "lists") renderLists();
   if (name === "setup") renderSetupSelect();
+
+  // Persiste só views "retomáveis" (não retoma em quiz/result, que são transitórias)
+  if (["lists", "list-detail", "setup"].includes(name)) {
+    state.lastView = {
+      view: name,
+      listId: name === "list-detail" ? state.currentListId : null,
+      kanji: name === "list-detail" ? state.activeKanji : null
+    };
+    saveState();
+  }
+}
+
+// Retorna à última view que estava aberta antes de fechar o app
+function restoreLastView() {
+  const lv = state.lastView || { view: "lists" };
+  // Valida que a lista referenciada ainda existe
+  if (lv.view === "list-detail" && lv.listId) {
+    const list = state.lists.find(l => l.id === lv.listId);
+    if (!list) {
+      switchView("lists");
+      return;
+    }
+    state.currentListId = lv.listId;
+    // Valida que o kanji ainda existe na lista
+    state.activeKanji = (lv.kanji && list.kanji.includes(lv.kanji)) ? lv.kanji : null;
+    document.getElementById("list-detail-title").textContent = list.name;
+    renderListDetail();
+    switchView("list-detail");
+  } else {
+    switchView(lv.view || "lists");
+  }
 }
 
 // ---------- INIT ----------
@@ -944,6 +1053,19 @@ async function init() {
       saveState();
     };
   });
+  document.getElementById("practice-choices").querySelectorAll(".choice").forEach(c => {
+    if (c.dataset.practice === (state.config.practice || "all")) {
+      c.parentElement.querySelectorAll(".choice").forEach(x => x.classList.remove("selected"));
+      c.classList.add("selected");
+    }
+    c.onclick = () => {
+      c.parentElement.querySelectorAll(".choice").forEach(x => x.classList.remove("selected"));
+      c.classList.add("selected");
+      state.config.practice = c.dataset.practice;
+      saveState();
+      updateSetupStats();
+    };
+  });
   document.getElementById("mode-choices").querySelectorAll(".choice").forEach(c => {
     if (c.dataset.mode === state.config.mode) {
       c.parentElement.querySelectorAll(".choice").forEach(x => x.classList.remove("selected"));
@@ -992,6 +1114,7 @@ async function init() {
   });
 
   renderLists();
+  restoreLastView();
 }
 
 document.addEventListener("DOMContentLoaded", init);

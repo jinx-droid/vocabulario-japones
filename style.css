@@ -936,3 +936,31 @@ h2 {
   flex: 1;
   margin: 0;
 }
+
+/* === MASTERY DOTS === */
+.mastery-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: middle;
+  transform: translateY(-2px);
+  flex-shrink: 0;
+}
+.mastery-new {
+  /* Sem ponto visual — palavra ainda não revisada */
+  background: transparent;
+  border: 1.5px solid var(--paper-deep);
+  width: 7px;
+  height: 7px;
+}
+.mastery-shaky {
+  background: #d4a017;  /* amarelo mostarda */
+}
+.mastery-wrong {
+  background: var(--hanko);
+}
+.mastery-mastered {
+  background: var(--green);
+}

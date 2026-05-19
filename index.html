@@ -106,7 +106,7 @@
     <div class="config-label">01 · Fonte das palavras</div>
     <select id="source-select" class="select-input"></select>
     <div class="stats" id="setup-stats" style="margin-top: 10px;">
-      <span><strong id="stat-selected">0</strong> palavras disponíveis</span>
+      <span><strong id="stat-selected">0</strong> palavras disponíveis <span id="stat-breakdown" class="hint-soft" style="margin-left: 6px;"></span></span>
     </div>
   </div>
 
@@ -144,6 +144,15 @@
       <button class="choice selected" data-srs="true">SRS leve <span class="hint-soft">(prioriza erros)</span></button>
       <button class="choice" data-srs="false">Aleatório</button>
     </div>
+  </div>
+
+  <div class="config-block">
+    <div class="config-label">06 · Filtrar palavras</div>
+    <div class="choice-row" id="practice-choices">
+      <button class="choice selected" data-practice="all">Todas</button>
+      <button class="choice" data-practice="wrong-only">Só erradas</button>
+    </div>
+    <p class="hint-soft" id="practice-hint" style="margin-top: 10px;">"Só erradas" usa apenas palavras com pelo menos 1 erro registrado.</p>
   </div>
 
   <button class="start-btn" id="start-btn">Iniciar 始める</button>
