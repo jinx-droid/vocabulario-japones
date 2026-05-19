@@ -766,26 +766,6 @@ h2 {
   color: var(--paper);
 }
 
-/* === SYNC BLOCK (export/import) === */
-.sync-block {
-  margin-top: 40px;
-  padding-top: 18px;
-  border-top: 1px dashed var(--muted);
-}
-.sync-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 12px;
-}
-.hint-text {
-  font-family: 'IBM Plex Sans', sans-serif;
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.55;
-  margin-bottom: 4px;
-}
-
 /* === MULTIPLE MEANINGS === */
 .meaning-main { color: var(--muted); }
 .meaning-extra {
