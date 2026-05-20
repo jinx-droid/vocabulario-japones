@@ -1,43 +1,48 @@
-# 語彙クイズ — Vocabulário Quiz (v4)
+# 語彙クイズ — Vocabulário Quiz (v5)
 
-Web app de quiz de vocabulário japonês, organizado por listas pessoais de kanji.
+Web app de quiz de vocabulário japonês, organizado por listas pessoais de kanji,
+com dados de frequência reais.
 
-## Novidades da v4
+## Novidades da v5
 
-- **Indicador visual de domínio**: cada palavra mostra uma bolinha colorida:
-  • sem cor = nunca vista
-  • amarela = vista, mas inconsistente
-  • verde = dominada (≥3 acertos com taxa ≥80%)
-  • vermelha = erra mais do que acerta
-- **Filtro "Só erradas"** na configuração de quiz: pratica apenas palavras
-  com pelo menos um erro registrado. Útil para revisão focada.
-- **Lembrar último estado**: ao reabrir o app, retoma na última lista
-  e kanji que você estava vendo.
+- **Auto-marcação por frequência**: ao adicionar um kanji a uma lista, as 15
+  palavras mais frequentes que o utilizam são marcadas automaticamente. Zero
+  cliques para começar a estudar.
+- **Ordenação por frequência real**: as palavras agora aparecem na ordem
+  em que aparecem no japonês moderno (baseado em corpus de notícias e
+  prioridade JMdict), em vez de ordenação por posição/tamanho.
 
-## Outras features (vindas da v3)
+## Features acumuladas
 
-- Múltiplos significados visíveis.
+- Múltiplos significados visíveis ao explorar e no feedback do quiz.
 - SRS leve (peso por acertos/erros).
 - Direção inversa do quiz (significado → kanji).
-- Backup/sync via arquivo JSON (Listas → Exportar tudo / Importar).
+- Indicador visual de domínio (bolinhas de cor).
+- Filtro "Só erradas" para revisão focada.
+- Lembrar último estado ao reabrir.
+- Backup via arquivo JSON (sincronização manual entre dispositivos).
 
 ## Fluxo de uso
 
-1. **Listas** → criar uma lista (ex: "JLPT N5 - lição 3").
-2. Adicionar kanji à lista (cole um bloco ou um por vez).
-3. Tocar em cada kanji → marcar com ♡ as palavras a estudar.
-4. **Estudar** → configurar fonte, direção, modo, filtro, quantidade.
-5. Quiz mostra acerto/erro com feedback rico.
+1. **Listas** → criar uma lista.
+2. Adicionar kanji (cole um bloco ou um por vez) — **15 palavras já vêm
+   marcadas automaticamente para cada kanji novo**.
+3. Tocar em qualquer kanji da lista para ajustar marcações se quiser.
+4. **Estudar** → configurar e iniciar quiz.
 
 ## Hospedagem
 
-Suba os 5 arquivos (`index.html`, `style.css`, `app.js`, `words.json`,
-`index.json`) num repositório público no GitHub. Settings → Pages →
-branch `main`, pasta `/(root)`. Após 1-2 minutos, URL acessível.
+GitHub Pages: suba `index.html`, `style.css`, `app.js`, `words.json`,
+`index.json`. Settings → Pages → branch main, pasta root.
 
 ## Privacidade
 
-Tudo em `localStorage`. Backup só é gerado/lido localmente.
+Tudo em `localStorage`. Backup só local.
+
+## Fonte dos dados
+
+JMdict (eng-common) + dados de frequência do JMdict XML completo
+(tags `nfXX`, `ichi1`, `news1`, `spec1`). Mantido pelo EDRDG, CC BY-SA 4.0.
 
 ## Atalhos (quiz)
 
