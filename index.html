@@ -25,7 +25,10 @@
     <span class="logo-jp">語彙クイズ</span>
     <span class="logo-pt">Vocabulário · Múltipla escolha</span>
   </div>
-  <div class="stamp">学習</div>
+  <div class="header-right">
+    <button class="theme-toggle" id="theme-toggle" title="Alternar tema">☾</button>
+    <div class="stamp">学習</div>
+  </div>
 </header>
 
 <nav class="tabs" role="tablist">
@@ -88,13 +91,26 @@
 <!-- LIST DETAIL VIEW (gerenciar uma lista específica) -->
 <section id="list-detail-view" class="view">
   <button class="back-btn" id="back-to-lists">← Listas</button>
-  <h2 id="list-detail-title">Lista</h2>
+  <div class="list-detail-header">
+    <h2 id="list-detail-title">Lista</h2>
+    <button class="rename-btn" id="rename-list-btn" title="Renomear">✎</button>
+  </div>
   <p class="section-meta" id="list-detail-meta">— 0 kanji · 0 palavras marcadas</p>
 
   <div class="config-block">
     <div class="config-label">Adicionar kanji a esta lista</div>
     <input type="text" id="add-kanji-input" class="jp" placeholder="Cole vários (ex: 日月火水木) ou digite um por vez" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-    <button class="btn-primary" id="add-kanji-btn" style="margin-top: 10px;">Adicionar</button>
+    <div style="display: flex; gap: 8px; margin-top: 10px; align-items: center;">
+      <button class="btn-primary" id="add-kanji-btn" style="flex: 1;">Adicionar</button>
+      <select id="automark-select" class="select-input" style="flex: 0 0 auto; width: auto;">
+        <option value="0">Sem auto-marcar</option>
+        <option value="10">+10 top</option>
+        <option value="15" selected>+15 top</option>
+        <option value="25">+25 top</option>
+        <option value="50">+50 top</option>
+        <option value="999">Todas</option>
+      </select>
+    </div>
   </div>
 
   <div class="config-block" id="kanji-chips-block" style="display:none">
@@ -163,8 +179,9 @@
     <div class="choice-row" id="practice-choices">
       <button class="choice selected" data-practice="all">Todas</button>
       <button class="choice" data-practice="wrong-only">Só erradas</button>
+      <button class="choice" data-practice="skip-mastered">Pular dominadas</button>
     </div>
-    <p class="hint-soft" id="practice-hint" style="margin-top: 10px;">"Só erradas" usa apenas palavras com pelo menos 1 erro registrado.</p>
+    <p class="hint-soft" id="practice-hint" style="margin-top: 10px;">"Só erradas" usa apenas palavras com pelo menos 1 erro. "Pular dominadas" exclui palavras com ≥3 acertos e taxa ≥80%.</p>
   </div>
 
   <button class="start-btn" id="start-btn">Iniciar 始める</button>
@@ -208,6 +225,17 @@
 </main>
 
 <div class="toast" id="toast"></div>
+
+<!-- MODAL DE CONFIRMAÇÃO -->
+<div class="modal-overlay" id="modal-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-message" id="modal-message"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="modal-cancel">Cancelar</button>
+      <button class="btn-primary" id="modal-ok">OK</button>
+    </div>
+  </div>
+</div>
 
 <script src="app.js"></script>
 </body>

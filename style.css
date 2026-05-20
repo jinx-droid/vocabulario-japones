@@ -1007,3 +1007,134 @@ details[open] .cloud-toggle { content: "fechar ▴"; }
   color: var(--muted);
   border-left: 2px solid var(--hanko);
 }
+
+/* === DARK THEME === */
+html[data-theme="dark"] {
+  --ink: #ebe6dd;
+  --paper: #1a1916;
+  --paper-deep: #25231e;
+  --rule: #ebe6dd;
+  --hanko: #e8504a;
+  --hanko-soft: #e8504a22;
+  --muted: #908a7f;
+  --green: #6abd9a;
+  --green-soft: #6abd9a22;
+}
+html[data-theme="dark"] body::before {
+  opacity: 0.3;
+}
+
+/* === HEADER RIGHT (theme toggle + stamp) === */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.theme-toggle {
+  background: none;
+  border: 1.5px solid var(--ink);
+  color: var(--ink);
+  width: 32px;
+  height: 32px;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 0;
+  transition: all 0.15s;
+}
+.theme-toggle:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* === LIST DETAIL HEADER (title + rename) === */
+.list-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+.list-detail-header h2 {
+  flex: 1;
+  margin-bottom: 0;
+}
+.rename-btn {
+  background: none;
+  border: 1px solid var(--muted);
+  color: var(--muted);
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rename-btn:hover {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+/* === LIST DETAIL META DOTS === */
+.meta-mastered { color: var(--green); }
+.meta-shaky { color: #d4a017; }
+.meta-wrong { color: var(--hanko); }
+.meta-new { color: var(--muted); }
+
+/* === CUSTOM MODAL === */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: fadeIn 0.15s ease-out;
+}
+.modal {
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  max-width: 380px;
+  width: 100%;
+  padding: 22px 20px 18px;
+}
+.modal-message {
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--ink);
+  margin-bottom: 18px;
+  white-space: pre-wrap;
+}
+.modal-actions {
+  display: flex;
+  gap: 8px;
+}
+.modal-actions button {
+  flex: 1;
+}
+
+.modal-input {
+  width: 100%;
+  background: var(--paper);
+  border: 1.5px solid var(--ink);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 15px;
+  padding: 10px 12px;
+  color: var(--ink);
+  margin-bottom: 16px;
+  margin-top: -8px;
+  display: none;
+}
+.modal-input:focus {
+  outline: none;
+  border-color: var(--hanko);
+}

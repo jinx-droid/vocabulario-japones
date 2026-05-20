@@ -21,7 +21,9 @@ let state = {
     length: 10,
     source: "all",
     srs: true,
-    practice: "all"
+    practice: "all",
+    autoMark: 15,            // quantas palavras marcar automaticamente ao adicionar kanji (0 = nenhuma)
+    theme: "light"           // light | dark
   },
   cloud: {            // configuração de sincronização (GitHub PAT)
     user: "",
@@ -45,7 +47,8 @@ function saveState() {
       deletedLists: state.deletedLists,
       config: state.config,
       cloud: state.cloud,
-      lastView: state.lastView
+      lastView: state.lastView,
+      quiz: state.quiz  // persiste quiz em andamento pra poder retomar
     }));
   } catch (e) { toast("Não foi possível salvar", true); }
 }
@@ -62,6 +65,12 @@ function loadState() {
     if (parsed.cloud) state.cloud = { ...state.cloud, ...parsed.cloud };
     if (parsed.lastView && typeof parsed.lastView === 'object') {
       state.lastView = { ...state.lastView, ...parsed.lastView };
+    }
+    // Quiz pendente: guarda os campos cruz mas só rehidrata depois de loadData
+    if (parsed.quiz && parsed.quiz.questionIds && Array.isArray(parsed.quiz.questionIds)) {
+      if (parsed.quiz.index < parsed.quiz.questionIds.length) {
+        state._pendingQuiz = parsed.quiz;  // temporário
+      }
     }
   } catch (e) { console.warn(e); }
 }
@@ -125,6 +134,91 @@ function toast(msg, isError = false) {
   t.classList.add("show");
   clearTimeout(toast._t);
   toast._t = setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+// ---------- CUSTOM MODAL ----------
+// Substitui confirm() do browser por um modal com o visual do app.
+// Retorna Promise<boolean>.
+function customConfirm(message, options = {}) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById("modal-overlay");
+    const msgEl = document.getElementById("modal-message");
+    const okBtn = document.getElementById("modal-ok");
+    const cancelBtn = document.getElementById("modal-cancel");
+    msgEl.textContent = message;
+    okBtn.textContent = options.okLabel || "OK";
+    cancelBtn.textContent = options.cancelLabel || "Cancelar";
+    overlay.style.display = "flex";
+
+    const cleanup = (result) => {
+      overlay.style.display = "none";
+      okBtn.onclick = null;
+      cancelBtn.onclick = null;
+      overlay.onclick = null;
+      document.removeEventListener("keydown", onKey);
+      resolve(result);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") cleanup(false);
+      if (e.key === "Enter") cleanup(true);
+    };
+    okBtn.onclick = () => cleanup(true);
+    cancelBtn.onclick = () => cleanup(false);
+    // Clicar no overlay (fora do modal) cancela
+    overlay.onclick = (e) => { if (e.target === overlay) cleanup(false); };
+    document.addEventListener("keydown", onKey);
+    setTimeout(() => okBtn.focus(), 50);
+  });
+}
+
+// Pede texto ao usuário (substitui prompt() do browser). Retorna Promise<string|null>.
+function customPrompt(message, defaultValue = "") {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById("modal-overlay");
+    const msgEl = document.getElementById("modal-message");
+    const okBtn = document.getElementById("modal-ok");
+    const cancelBtn = document.getElementById("modal-cancel");
+    msgEl.textContent = message;
+    okBtn.textContent = "OK";
+    cancelBtn.textContent = "Cancelar";
+    // Insere um input depois da mensagem
+    let input = document.getElementById("modal-input");
+    if (!input) {
+      input = document.createElement("input");
+      input.id = "modal-input";
+      input.type = "text";
+      input.className = "modal-input";
+      msgEl.parentNode.insertBefore(input, msgEl.nextSibling);
+    }
+    input.value = defaultValue;
+    input.style.display = "block";
+    overlay.style.display = "flex";
+
+    const cleanup = (result) => {
+      overlay.style.display = "none";
+      input.style.display = "none";
+      okBtn.onclick = null;
+      cancelBtn.onclick = null;
+      overlay.onclick = null;
+      input.onkeydown = null;
+      document.removeEventListener("keydown", onKey);
+      resolve(result);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") cleanup(null);
+    };
+    okBtn.onclick = () => cleanup(input.value);
+    cancelBtn.onclick = () => cleanup(null);
+    overlay.onclick = (e) => { if (e.target === overlay) cleanup(null); };
+    input.onkeydown = (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        cleanup(input.value);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    setTimeout(() => { input.focus(); input.select(); }, 50);
+  });
 }
 
 const KANJI_RE = /[\u4e00-\u9faf]/;
@@ -436,6 +530,20 @@ function setSyncStatus(text) {
   }
 }
 
+function applyTheme() {
+  const theme = state.config.theme || "light";
+  document.documentElement.setAttribute("data-theme", theme);
+}
+
+function toggleTheme() {
+  state.config.theme = (state.config.theme === "dark") ? "light" : "dark";
+  saveState();
+  applyTheme();
+  // Atualiza ícone do botão
+  const btn = document.getElementById("theme-toggle");
+  if (btn) btn.textContent = state.config.theme === "dark" ? "☀" : "☾";
+}
+
 function formatRelativeTime(ts) {
   if (!ts) return "nunca";
   const seconds = Math.floor((Date.now() - ts) / 1000);
@@ -478,8 +586,12 @@ function saveCloudConfig() {
   renderCloudConfig();
 }
 
-function disconnectCloud() {
-  if (!confirm("Desconectar da sincronização?\n(O token será removido deste navegador. Você pode reconectar a qualquer momento.)")) return;
+async function disconnectCloud() {
+  const ok = await customConfirm(
+    "Desconectar da sincronização?\n\nO token será removido deste navegador. Você pode reconectar a qualquer momento.",
+    { okLabel: "Desconectar" }
+  );
+  if (!ok) return;
   state.cloud.user = "";
   state.cloud.repo = "";
   state.cloud.token = "";
@@ -534,14 +646,13 @@ function exportData() {
 
 function importData(file) {
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = async (e) => {
     try {
       const parsed = JSON.parse(e.target.result);
       if (parsed.app !== "vocab-jmdict") {
         toast("Arquivo não é um backup válido", true);
         return;
       }
-      // Conta o que está chegando
       const incomingLists = Array.isArray(parsed.lists) ? parsed.lists : [];
       const incomingStats = (parsed.stats && typeof parsed.stats === 'object') ? parsed.stats : {};
       if (incomingLists.length === 0) {
@@ -549,21 +660,23 @@ function importData(file) {
         return;
       }
 
-      // Pergunta: substituir tudo ou mesclar?
       const hasExistingData = state.lists.length > 0 || Object.keys(state.stats).length > 0;
       let mode = "replace";
       if (hasExistingData) {
-        const choice = confirm(
-          `Importar ${incomingLists.length} listas?\n\n` +
-          `OK = MESCLAR (adicionar às listas existentes)\n` +
-          `Cancelar = SUBSTITUIR (apaga tudo e importa)`
+        const choice = await customConfirm(
+          `Importar ${incomingLists.length} listas?\n\nMESCLAR adiciona às listas existentes.\nSUBSTITUIR apaga tudo e importa.`,
+          { okLabel: "Mesclar", cancelLabel: "Substituir" }
         );
         mode = choice ? "merge" : "replace";
       }
 
       if (mode === "replace") {
-        if (hasExistingData && !confirm("Tem certeza? Isso apaga TODAS as listas e estatísticas atuais.")) {
-          return;
+        if (hasExistingData) {
+          const ok = await customConfirm(
+            "Tem certeza? Isso apaga TODAS as listas e estatísticas atuais.",
+            { okLabel: "Apagar e importar" }
+          );
+          if (!ok) return;
         }
         state.lists = incomingLists;
         state.stats = incomingStats;
@@ -694,8 +807,29 @@ function renderListDetail() {
   const list = getCurrentList();
   if (!list) return;
 
-  document.getElementById("list-detail-meta").textContent =
-    `— ${list.kanji.length} kanji · ${list.selected.length} palavras marcadas`;
+  // Breakdown de domínio nessa lista
+  let mastered = 0, shaky = 0, wrong = 0, neverSeen = 0;
+  for (const i of list.selected) {
+    const level = getMasteryLevel(i);
+    if (level === "mastered") mastered++;
+    else if (level === "shaky") shaky++;
+    else if (level === "wrong") wrong++;
+    else neverSeen++;
+  }
+
+  const metaEl = document.getElementById("list-detail-meta");
+  let metaHtml = `— ${list.kanji.length} kanji · ${list.selected.length} palavras`;
+  if (list.selected.length > 0) {
+    const parts = [];
+    if (mastered > 0) parts.push(`<span class="meta-mastered">●</span> ${mastered}`);
+    if (shaky > 0) parts.push(`<span class="meta-shaky">●</span> ${shaky}`);
+    if (wrong > 0) parts.push(`<span class="meta-wrong">●</span> ${wrong}`);
+    if (neverSeen > 0) parts.push(`<span class="meta-new">○</span> ${neverSeen}`);
+    if (parts.length > 0) {
+      metaHtml += ` · ${parts.join(' · ')}`;
+    }
+  }
+  metaEl.innerHTML = metaHtml;
 
   renderKanjiChips();
   document.getElementById("danger-zone").style.display = "block";
@@ -734,8 +868,9 @@ function renderKanjiChips() {
 
 // Marca automaticamente as TOP_N palavras mais frequentes do kanji na lista.
 // Só adiciona palavras que ainda não estão em selected. Retorna quantas foram adicionadas.
-const AUTO_MARK_TOP_N = 15;
-function autoMarkTopWords(list, kanji) {
+function autoMarkTopWords(list, kanji, n) {
+  if (n === undefined) n = state.config.autoMark || 15;
+  if (n === 0) return 0;  // "0" = não auto-marcar
   const indices = DATA.index[kanji] || [];
   if (indices.length === 0) return 0;
   // ordena por frequência igual à exibição
@@ -745,7 +880,7 @@ function autoMarkTopWords(list, kanji) {
     if (fa !== fb) return fa - fb;
     return DATA.words[a].k.length - DATA.words[b].k.length;
   });
-  const topIds = sorted.slice(0, AUTO_MARK_TOP_N);
+  const topIds = n >= sorted.length ? sorted : sorted.slice(0, n);
   const selectedSet = new Set(list.selected);
   let added = 0;
   for (const id of topIds) {
@@ -792,10 +927,14 @@ function addKanjiToList() {
   }
 }
 
-function removeKanjiFromList(kanji) {
+async function removeKanjiFromList(kanji) {
   const list = getCurrentList();
   if (!list) return;
-  if (!confirm(`Remover ${kanji} desta lista?\n(As palavras marcadas continuam na lista.)`)) return;
+  const ok = await customConfirm(
+    `Remover ${kanji} desta lista?\n\nAs palavras marcadas continuam na lista.`,
+    { okLabel: "Remover" }
+  );
+  if (!ok) return;
   list.kanji = list.kanji.filter(k => k !== kanji);
   if (state.activeKanji === kanji) state.activeKanji = null;
   touchList(list);
@@ -814,12 +953,14 @@ function selectKanjiInList(kanji) {
   }, 100);
 }
 
-function deleteList() {
+async function deleteList() {
   const list = getCurrentList();
   if (!list) return;
-  if (!confirm(`Excluir a lista "${list.name}"?\n${list.kanji.length} kanji e ${list.selected.length} palavras marcadas serão perdidos.`)) return;
-  // Tombstone: guarda id e ts da exclusão, pra que o merge saiba que essa lista
-  // foi APAGADA (e não ressurja vinda do remoto).
+  const ok = await customConfirm(
+    `Excluir a lista "${list.name}"?\n\n${list.kanji.length} kanji e ${list.selected.length} palavras marcadas serão perdidos.`,
+    { okLabel: "Excluir" }
+  );
+  if (!ok) return;
   state.deletedLists = state.deletedLists || {};
   state.deletedLists[list.id] = Date.now();
   state.lists = state.lists.filter(l => l.id !== list.id);
@@ -829,6 +970,24 @@ function deleteList() {
   renderLists();
   switchView("lists");
   toast("Lista excluída");
+}
+
+async function renameCurrentList() {
+  const list = getCurrentList();
+  if (!list) return;
+  const newName = await customPrompt("Novo nome da lista:", list.name);
+  if (newName === null) return;
+  const trimmed = newName.trim();
+  if (!trimmed) {
+    toast("Nome não pode ser vazio", true);
+    return;
+  }
+  if (trimmed === list.name) return;
+  list.name = trimmed;
+  touchList(list);
+  saveState();
+  document.getElementById("list-detail-title").textContent = trimmed;
+  toast("Lista renomeada");
 }
 
 // ---------- RESULTS (palavras do kanji ativo) ----------
@@ -862,6 +1021,7 @@ function renderListResults() {
     <div class="results-meta">
       <span><span class="count">${sorted.length}</span> palavras com <span style="font-family:'Shippori Mincho',serif;font-size:18px;color:var(--ink)">${kanji}</span></span>
       <div class="actions">
+        <button id="mark-top-btn">Marcar ${state.config.autoMark || 15} top</button>
         <button id="select-all-btn">${allSelected ? "Desmarcar" : "Marcar"} todas</button>
       </div>
     </div>
@@ -918,6 +1078,21 @@ function renderListResults() {
       renderListDetail();
     };
   }
+
+  const markTopBtn = document.getElementById("mark-top-btn");
+  if (markTopBtn) {
+    markTopBtn.onclick = () => {
+      const list2 = getCurrentList();
+      const n = state.config.autoMark || 15;
+      const added = autoMarkTopWords(list2, state.activeKanji, n);
+      if (added > 0) touchList(list2);
+      saveState();
+      renderListDetail();
+      toast(added === 0
+        ? `Já estavam todas as top ${n} marcadas`
+        : `${added} novas palavras marcadas`);
+    };
+  }
 }
 
 function toggleWordInCurrentList(wordIdx) {
@@ -937,8 +1112,26 @@ function toggleWordInCurrentList(wordIdx) {
     btn.textContent = isSel ? "♥" : "♡";
   }
 
-  document.getElementById("list-detail-meta").textContent =
-    `— ${list.kanji.length} kanji · ${list.selected.length} palavras marcadas`;
+  // Re-renderiza meta com breakdown atualizado
+  let mastered = 0, shaky = 0, wrong = 0, neverSeen = 0;
+  for (const i of list.selected) {
+    const level = getMasteryLevel(i);
+    if (level === "mastered") mastered++;
+    else if (level === "shaky") shaky++;
+    else if (level === "wrong") wrong++;
+    else neverSeen++;
+  }
+  const metaEl = document.getElementById("list-detail-meta");
+  let metaHtml = `— ${list.kanji.length} kanji · ${list.selected.length} palavras`;
+  if (list.selected.length > 0) {
+    const parts = [];
+    if (mastered > 0) parts.push(`<span class="meta-mastered">●</span> ${mastered}`);
+    if (shaky > 0) parts.push(`<span class="meta-shaky">●</span> ${shaky}`);
+    if (wrong > 0) parts.push(`<span class="meta-wrong">●</span> ${wrong}`);
+    if (neverSeen > 0) parts.push(`<span class="meta-new">○</span> ${neverSeen}`);
+    if (parts.length > 0) metaHtml += ` · ${parts.join(' · ')}`;
+  }
+  metaEl.innerHTML = metaHtml;
 
   renderKanjiChips();
 
@@ -1001,6 +1194,8 @@ function getQuizPool() {
       const s = state.stats[i];
       return s && s.w > 0;
     });
+  } else if (state.config.practice === "skip-mastered") {
+    ids = ids.filter(i => getMasteryLevel(i) !== "mastered");
   }
   return ids;
 }
@@ -1051,6 +1246,8 @@ function startQuiz() {
   if (poolIds.length < 4) {
     if (state.config.practice === "wrong-only") {
       toast(`Só ${poolIds.length} erradas. Mude o filtro para "Todas" ou pratique mais.`, true);
+    } else if (state.config.practice === "skip-mastered") {
+      toast(`Só ${poolIds.length} não-dominadas. Mude o filtro para "Todas".`, true);
     } else {
       toast(`Precisa de pelo menos 4 palavras (tem ${poolIds.length})`, true);
     }
@@ -1071,8 +1268,12 @@ function startQuiz() {
     poolIds,             // mantém pra modo infinito
     index: 0, correct: 0,
     total: state.config.length === 0 ? Infinity : length,
-    answered: false
+    answered: false,
+    // pra persistência: guarda só IDs (pool e questions são reidratados de DATA.words)
+    questionIds: selectedIds,
+    config: { mode: state.config.mode, direction: state.config.direction, srs: state.config.srs }
   };
+  saveState();
   switchView("quiz");
   renderQuestion();
 }
@@ -1236,6 +1437,7 @@ function answerQuestion(btnEl, opt, options) {
 
 function nextQuestion() {
   state.quiz.index++;
+  saveState();  // persiste progresso
   if (state.config.length !== 0 && state.quiz.index >= state.quiz.questions.length) {
     endQuiz();
     return;
@@ -1259,14 +1461,24 @@ function endQuiz() {
   else if (pct >= 60) { stamp.textContent = "可"; label.textContent = "Aprovado"; }
   else { stamp.textContent = "再"; label.textContent = "Refaça"; }
 
+  state.quiz = null;  // limpa quiz finalizado
+  saveState();
   switchView("result");
 }
 
-function quitQuiz() {
+async function quitQuiz() {
   if (state.quiz && state.quiz.index > 0) {
-    if (!confirm("Encerrar a sessão agora?")) return;
+    const ok = await customConfirm(
+      "Encerrar a sessão agora?\n\nO progresso será salvo e você poderá retomar depois.",
+      { okLabel: "Encerrar" }
+    );
+    if (!ok) return;
   }
-  state.quiz = null;
+  // Mantém state.quiz salvo, pra oferecer retomar ao reabrir
+  if (state.quiz && state.quiz.index === 0) {
+    state.quiz = null;
+    saveState();
+  }
   switchView("setup");
 }
 
@@ -1300,9 +1512,33 @@ function switchView(name) {
 }
 
 // Retorna à última view que estava aberta antes de fechar o app
-function restoreLastView() {
+async function restoreLastView() {
+  // Se há quiz pendente, oferece retomar antes de ir pra lastView
+  if (state._pendingQuiz) {
+    const pending = state._pendingQuiz;
+    delete state._pendingQuiz;
+    const progress = `${pending.index} de ${pending.questionIds.length}`;
+    const resume = await customConfirm(
+      `Você tem um quiz em andamento (${progress} respondidas).\n\nDeseja retomá-lo?`,
+      { okLabel: "Retomar", cancelLabel: "Descartar" }
+    );
+    if (resume) {
+      state.quiz = {
+        ...pending,
+        questions: pending.questionIds.map(i => ({ ...DATA.words[i], _id: i })),
+        poolIds: pending.poolIds || pending.questionIds,
+        pool: (pending.poolIds || pending.questionIds).map(i => ({ ...DATA.words[i], _id: i })),
+        answered: false
+      };
+      switchView("quiz");
+      renderQuestion();
+      return;
+    } else {
+      state.quiz = null;
+      saveState();
+    }
+  }
   const lv = state.lastView || { view: "lists" };
-  // Valida que a lista referenciada ainda existe
   if (lv.view === "list-detail" && lv.listId) {
     const list = state.lists.find(l => l.id === lv.listId);
     if (!list) {
@@ -1310,7 +1546,6 @@ function restoreLastView() {
       return;
     }
     state.currentListId = lv.listId;
-    // Valida que o kanji ainda existe na lista
     state.activeKanji = (lv.kanji && list.kanji.includes(lv.kanji)) ? lv.kanji : null;
     document.getElementById("list-detail-title").textContent = list.name;
     renderListDetail();
@@ -1323,12 +1558,21 @@ function restoreLastView() {
 // ---------- INIT ----------
 async function init() {
   loadState();
+  applyTheme();
+  // Atualiza ícone inicial
+  setTimeout(() => {
+    const btn = document.getElementById("theme-toggle");
+    if (btn) btn.textContent = state.config.theme === "dark" ? "☀" : "☾";
+  }, 0);
   await loadData();
 
   // Tabs
   document.querySelectorAll(".tab").forEach(tab => {
     tab.onclick = () => switchView(tab.dataset.view);
   });
+
+  // Theme toggle
+  document.getElementById("theme-toggle").onclick = toggleTheme;
 
   // Lists view
   document.getElementById("create-list-btn").onclick = createList;
@@ -1360,6 +1604,17 @@ async function init() {
     if (e.key === "Enter") addKanjiToList();
   });
   document.getElementById("delete-list-btn").onclick = deleteList;
+  document.getElementById("rename-list-btn").onclick = renameCurrentList;
+
+  // Auto-mark selector
+  const autoMarkSel = document.getElementById("automark-select");
+  autoMarkSel.value = String(state.config.autoMark ?? 15);
+  autoMarkSel.addEventListener("change", (e) => {
+    state.config.autoMark = parseInt(e.target.value) || 0;
+    saveState();
+    // Re-renderiza se houver kanji ativo, pra atualizar texto do "Marcar N top"
+    if (state.activeKanji) renderListResults();
+  });
 
   // Setup
   document.getElementById("source-select").addEventListener("change", (e) => {
@@ -1455,7 +1710,7 @@ async function init() {
   });
 
   renderLists();
-  restoreLastView();
+  await restoreLastView();
 }
 
 document.addEventListener("DOMContentLoaded", init);

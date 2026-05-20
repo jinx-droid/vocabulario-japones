@@ -1,72 +1,39 @@
-# 語彙クイズ — Vocabulário Quiz (v6)
+# 語彙クイズ — Vocabulário Quiz (v7)
 
-Web app de quiz de vocabulário japonês, com listas pessoais por kanji,
-SRS leve, e sincronização entre dispositivos via GitHub.
+Web app de quiz de vocabulário japonês com listas pessoais de kanji,
+SRS leve, sincronização entre dispositivos via GitHub.
 
-## Sincronização em nuvem (GitHub)
+## Novidades da v7
 
-A v6 adiciona sync automática via repositório GitHub privado seu, sem OAuth.
-
-### Configuração única
-
-1. **Criar repositório privado no GitHub**
-   - github.com → "New" → nome: `vocab-quiz-backup` (ou outro)
-   - Marcar como **Private**, marcar "Add a README file"
-   - "Create repository"
-
-2. **Gerar Personal Access Token**
-   - github.com → foto no canto superior direito → Settings
-   - Final do menu lateral → Developer settings
-   - Personal access tokens → Fine-grained tokens
-   - "Generate new token":
-     - Token name: "Vocab Quiz Sync"
-     - Expiration: 1 year
-     - Repository access: Only select repositories → escolha o repo criado
-     - Permissions → Repository permissions → Contents: **Read and write**
-   - "Generate token"
-   - **Copie o token AGORA** (começa com `github_pat_...`). Não vai ser
-     possível ver de novo depois.
-
-3. **Configurar no app**
-   - Aba Listas → seção "Sincronização em nuvem" → "configurar"
-   - Preencha: usuário GitHub, nome do repositório, e o token
-   - "Salvar configuração"
-
-### Uso diário
-
-- Toque em "↻ Sincronizar agora" antes de mudar de dispositivo.
-- No outro dispositivo, toque em "↻ Sincronizar agora" para puxar as mudanças.
-- Merge é por entidade (lista por lista, palavra por palavra), com last-write-wins.
-- Se houver conflito em entidades específicas, vence a mais recente.
-
-### Privacidade
-
-- O repositório é privado.
-- O token tem permissão restrita só a Contents desse repo (não acessa
-  outros repos nem informações de conta).
-- O token fica no localStorage do navegador. Use "Desconectar" para removê-lo.
-- Se perder o celular: revogue o token no GitHub
-  (Settings → Developer settings → token → Revoke).
+- **Renomear listas**: botão ✎ ao lado do título da lista.
+- **Configurar quantidade auto-marcada**: seletor ao lado de "Adicionar"
+  na tela de detalhe (10, 15, 25, 50, todas, ou desligado).
+- **Botão "Marcar N top"**: força re-aplicação da auto-marcação em um
+  kanji já adicionado.
+- **Filtro "Pular dominadas"**: novo modo de prática que exclui palavras
+  já dominadas (≥3 acertos com taxa ≥80%).
+- **Estatística por lista**: cabeçalho mostra breakdown visual de domínio
+  (verde/amarelo/vermelho/cinza).
+- **Salvar quiz interrompido**: se você sair de um quiz no meio,
+  pode retomar de onde parou na próxima vez.
+- **Modal próprio**: confirmações e prompts usam visual do app em vez
+  dos diálogos padrão do navegador.
+- **Modo escuro**: botão ☾/☀ no canto superior direito.
 
 ## Features acumuladas
 
-- Múltiplos significados visíveis ao explorar e no feedback do quiz.
-- Auto-marcação das 15 palavras mais frequentes ao adicionar um kanji.
-- Ordenação por frequência real (JMdict `nfXX`, `ichi1`, etc.).
-- SRS leve (peso por acertos/erros).
-- Direção inversa do quiz (significado → kanji).
+- Sincronização GitHub via Personal Access Token.
+- Auto-marcação das palavras mais frequentes ao adicionar kanji.
+- Ordenação por frequência real (JMdict nfXX/ichi1/news1).
+- Múltiplos significados visíveis.
+- SRS leve.
+- Direção inversa do quiz.
 - Indicador visual de domínio (bolinhas).
-- Filtro "Só erradas" para revisão.
-- Lembrar último estado ao reabrir.
-- Backup local via arquivo JSON.
-- **NOVO**: Sincronização entre dispositivos via GitHub.
+- Filtro "Só erradas".
+- Lembrar último estado.
+- Backup local (arquivo JSON).
 
-## Hospedagem do app
+## Sincronização GitHub
 
-GitHub Pages: `index.html`, `style.css`, `app.js`, `words.json`, `index.json`.
-Settings → Pages → branch main, pasta root.
-
-## Atalhos (quiz)
-
-- `1`-`4`: alternativa
-- `Espaço` / `Enter`: próxima
+Veja seções de configuração no README anterior (cria repo privado, gera
+fine-grained PAT com permissão Contents: Read and write, configura no app).
