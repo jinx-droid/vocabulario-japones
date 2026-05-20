@@ -433,6 +433,31 @@ function renderKanjiChips() {
   });
 }
 
+// Marca automaticamente as TOP_N palavras mais frequentes do kanji na lista.
+// Só adiciona palavras que ainda não estão em selected. Retorna quantas foram adicionadas.
+const AUTO_MARK_TOP_N = 15;
+function autoMarkTopWords(list, kanji) {
+  const indices = DATA.index[kanji] || [];
+  if (indices.length === 0) return 0;
+  // ordena por frequência igual à exibição
+  const sorted = [...indices].sort((a, b) => {
+    const fa = DATA.words[a].f ?? 99;
+    const fb = DATA.words[b].f ?? 99;
+    if (fa !== fb) return fa - fb;
+    return DATA.words[a].k.length - DATA.words[b].k.length;
+  });
+  const topIds = sorted.slice(0, AUTO_MARK_TOP_N);
+  const selectedSet = new Set(list.selected);
+  let added = 0;
+  for (const id of topIds) {
+    if (!selectedSet.has(id)) {
+      list.selected.push(id);
+      added++;
+    }
+  }
+  return added;
+}
+
 function addKanjiToList() {
   const list = getCurrentList();
   if (!list) return;
@@ -443,12 +468,15 @@ function addKanjiToList() {
     return;
   }
   let added = 0;
+  let totalMarked = 0;
   const newOnes = [];
   for (const k of extracted) {
     if (!list.kanji.includes(k)) {
       list.kanji.push(k);
       newOnes.push(k);
       added++;
+      // Marca automaticamente as 15 mais frequentes
+      totalMarked += autoMarkTopWords(list, k);
     }
   }
   saveState();
@@ -456,10 +484,10 @@ function addKanjiToList() {
   if (added === 0) {
     toast("Esses kanji já estão na lista");
   } else if (added === 1) {
-    toast(`${newOnes[0]} adicionado`);
+    toast(`${newOnes[0]} adicionado · ${totalMarked} palavras marcadas`);
     selectKanjiInList(newOnes[0]);
   } else {
-    toast(`${added} kanji adicionados`);
+    toast(`${added} kanji adicionados · ${totalMarked} palavras marcadas`);
     renderListDetail();
   }
 }
@@ -513,13 +541,13 @@ function renderListResults() {
     return;
   }
 
+  // Ordena por frequência (campo f). Menor f = mais frequente.
+  // Desempate: tamanho da palavra (menor primeiro).
   const sorted = [...indices].sort((a, b) => {
-    const wa = DATA.words[a].k;
-    const wb = DATA.words[b].k;
-    const ia = wa.indexOf(kanji);
-    const ib = wb.indexOf(kanji);
-    if (ia !== ib) return ia - ib;
-    return wa.length - wb.length;
+    const fa = DATA.words[a].f ?? 99;
+    const fb = DATA.words[b].f ?? 99;
+    if (fa !== fb) return fa - fb;
+    return DATA.words[a].k.length - DATA.words[b].k.length;
   });
 
   const selectedSet = new Set(list.selected);
