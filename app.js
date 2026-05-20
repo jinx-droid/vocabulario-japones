@@ -12,17 +12,24 @@ const STORAGE_KEY = "vocab_jmdict_v2";  // mantido pra preservar dados existente
 let DATA = { words: [], index: {} };
 
 let state = {
-  lists: [],          // [{ id, name, kanji: [chars], selected: [wordIdx], created }]
-  stats: {},          // { wordIdx: { c: correct, w: wrong, ts: last_seen_timestamp } }
+  lists: [],          // [{ id, name, kanji: [chars], selected: [wordIdx], created, _ts }]
+  stats: {},          // { wordIdx: { c, w, ts } }
+  deletedLists: {},   // tombstones: { listId: ts_of_deletion }
   config: {
-    mode: "meaning",      // meaning | reading | mixed
-    direction: "k2m",     // k2m (kanji→significado/leitura) | m2k (significado→kanji)
+    mode: "meaning",
+    direction: "k2m",
     length: 10,
     source: "all",
-    srs: true,            // usa peso de SRS no sorteio
-    practice: "all"       // all | wrong-only — filtra pool antes do sorteio
+    srs: true,
+    practice: "all"
   },
-  // Última posição: usada para retomar onde parou ao reabrir o app
+  cloud: {            // configuração de sincronização (GitHub PAT)
+    user: "",
+    repo: "",
+    token: "",
+    lastSync: 0,
+    lastError: null
+  },
   lastView: { view: "lists", listId: null, kanji: null },
   currentListId: null,
   activeKanji: null,
@@ -35,7 +42,9 @@ function saveState() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       lists: state.lists,
       stats: state.stats,
+      deletedLists: state.deletedLists,
       config: state.config,
+      cloud: state.cloud,
       lastView: state.lastView
     }));
   } catch (e) { toast("Não foi possível salvar", true); }
@@ -48,7 +57,9 @@ function loadState() {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed.lists)) state.lists = parsed.lists;
     if (parsed.stats && typeof parsed.stats === 'object') state.stats = parsed.stats;
+    if (parsed.deletedLists && typeof parsed.deletedLists === 'object') state.deletedLists = parsed.deletedLists;
     if (parsed.config) state.config = { ...state.config, ...parsed.config };
+    if (parsed.cloud) state.cloud = { ...state.cloud, ...parsed.cloud };
     if (parsed.lastView && typeof parsed.lastView === 'object') {
       state.lastView = { ...state.lastView, ...parsed.lastView };
     }
@@ -223,7 +234,281 @@ function srsPickOne(poolIds) {
   return weighted[weighted.length - 1].id;
 }
 
-// ---------- EXPORT / IMPORT ----------
+// ---------- CLOUD SYNC (GitHub via PAT) ----------
+// Sincroniza estado com um repositório privado no GitHub, usando Personal Access Token.
+// Estratégia: last-write-wins por entidade (listas por _ts, stats por ts).
+// Arquivo no repo: vocab-quiz-backup.json (sempre na branch padrão).
+
+const SYNC_FILE = "vocab-quiz-backup.json";
+const SYNC_COMMIT_MSG = "Backup vocab-quiz";
+
+function cloudConfigured() {
+  return !!(state.cloud.user && state.cloud.repo && state.cloud.token);
+}
+
+// Monta o payload a ser persistido remotamente
+function buildSyncPayload() {
+  return {
+    app: "vocab-jmdict",
+    version: 5,
+    syncedAt: Date.now(),
+    lists: state.lists,
+    stats: state.stats,
+    deletedLists: state.deletedLists || {}
+  };
+}
+
+// Resposta da API do GitHub para GET de file: { content, sha, ... } (content é base64)
+// Para PUT, precisamos passar o "sha" do arquivo existente (ou nada se for criação)
+async function ghApiGetFile() {
+  const { user, repo, token } = state.cloud;
+  const url = `https://api.github.com/repos/${encodeURIComponent(user)}/${encodeURIComponent(repo)}/contents/${SYNC_FILE}`;
+  const resp = await fetch(url, {
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    }
+  });
+  if (resp.status === 404) return null; // arquivo ainda não existe
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`GitHub GET falhou (${resp.status}): ${err.slice(0, 200)}`);
+  }
+  const data = await resp.json();
+  // content vem em base64 (com quebras de linha)
+  const decoded = atob(data.content.replace(/\n/g, ''));
+  // Pode conter UTF-8 multi-byte; decodifica corretamente
+  const bytes = new Uint8Array(decoded.length);
+  for (let i = 0; i < decoded.length; i++) bytes[i] = decoded.charCodeAt(i);
+  const text = new TextDecoder('utf-8').decode(bytes);
+  return { json: JSON.parse(text), sha: data.sha };
+}
+
+async function ghApiPutFile(payloadObj, sha) {
+  const { user, repo, token } = state.cloud;
+  const url = `https://api.github.com/repos/${encodeURIComponent(user)}/${encodeURIComponent(repo)}/contents/${SYNC_FILE}`;
+  // base64 com UTF-8 correto
+  const jsonStr = JSON.stringify(payloadObj, null, 2);
+  const bytes = new TextEncoder().encode(jsonStr);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  const content = btoa(bin);
+  const body = {
+    message: SYNC_COMMIT_MSG + " - " + new Date().toISOString().slice(0, 19),
+    content
+  };
+  if (sha) body.sha = sha;
+  const resp = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Accept": "application/vnd.github+json",
+      "Content-Type": "application/json",
+      "X-GitHub-Api-Version": "2022-11-28"
+    },
+    body: JSON.stringify(body)
+  });
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`GitHub PUT falhou (${resp.status}): ${err.slice(0, 200)}`);
+  }
+  return await resp.json();
+}
+
+// Merge entre estado LOCAL (atual) e estado REMOTO (vindo do GitHub).
+// Regras:
+//   - listas: vence a versão com maior _ts.
+//     · se uma lista existe só localmente: mantida (foi criada depois do último sync).
+//     · se existe só no remoto: adicionada (criada noutro dispositivo).
+//     · se existe nos dois: vence maior _ts.
+//   - tombstones: se uma lista está marcada como deletada num lado COM ts > _ts do outro lado,
+//     ela permanece deletada. Caso contrário, ressurge (ou seja, foi recriada depois).
+//   - stats: por palavra, soma de c/w não é apropriada — usamos last-write-wins por word index.
+//     Mantém a versão com maior ts.
+function mergeRemote(remote) {
+  const merged = {
+    lists: [],
+    stats: {},
+    deletedLists: { ...(state.deletedLists || {}) }
+  };
+  // Junta tombstones (deletedLists): mantém o ts mais alto pra cada id
+  const remoteDeleted = remote.deletedLists || {};
+  for (const [id, ts] of Object.entries(remoteDeleted)) {
+    const local = merged.deletedLists[id] || 0;
+    if (ts > local) merged.deletedLists[id] = ts;
+  }
+
+  // Junta listas por id
+  const byId = {};
+  for (const l of state.lists) byId[l.id] = { local: l };
+  for (const l of (remote.lists || [])) {
+    byId[l.id] = byId[l.id] || {};
+    byId[l.id].remote = l;
+  }
+  for (const [id, pair] of Object.entries(byId)) {
+    const localTs = pair.local ? (pair.local._ts || 0) : 0;
+    const remoteTs = pair.remote ? (pair.remote._ts || 0) : 0;
+    const deletedTs = merged.deletedLists[id] || 0;
+    // Se deletada com ts > ambos, mantém deletada
+    if (deletedTs > localTs && deletedTs > remoteTs) continue;
+    // Se foi recriada/modificada após a deleção, remove tombstone
+    if (Math.max(localTs, remoteTs) > deletedTs) {
+      delete merged.deletedLists[id];
+    }
+    // Escolhe a versão mais recente
+    if (localTs >= remoteTs) {
+      if (pair.local) merged.lists.push(pair.local);
+    } else {
+      merged.lists.push(pair.remote);
+    }
+  }
+
+  // Stats: por wordIdx, vence maior ts
+  const allStatKeys = new Set([
+    ...Object.keys(state.stats || {}),
+    ...Object.keys(remote.stats || {})
+  ]);
+  for (const k of allStatKeys) {
+    const l = (state.stats || {})[k];
+    const r = (remote.stats || {})[k];
+    if (!l) { merged.stats[k] = r; continue; }
+    if (!r) { merged.stats[k] = l; continue; }
+    merged.stats[k] = (l.ts || 0) >= (r.ts || 0) ? l : r;
+  }
+  return merged;
+}
+
+// Roda o ciclo completo: GET → merge → PUT.
+// Atualiza state e localStorage. Retorna { ok, msg }.
+async function cloudSync() {
+  if (!cloudConfigured()) {
+    return { ok: false, msg: "Configure a sincronização primeiro" };
+  }
+  try {
+    setSyncStatus("Buscando remoto…");
+    const remoteFile = await ghApiGetFile();
+    let remote = null;
+    let sha = null;
+    if (remoteFile) {
+      remote = remoteFile.json;
+      sha = remoteFile.sha;
+      // Validação básica
+      if (remote.app !== "vocab-jmdict") {
+        throw new Error("Arquivo remoto não é um backup deste app");
+      }
+    }
+
+    if (remote) {
+      setSyncStatus("Mesclando…");
+      const merged = mergeRemote(remote);
+      state.lists = merged.lists;
+      state.stats = merged.stats;
+      state.deletedLists = merged.deletedLists;
+    }
+
+    setSyncStatus("Enviando…");
+    const payload = buildSyncPayload();
+    await ghApiPutFile(payload, sha);
+
+    state.cloud.lastSync = Date.now();
+    state.cloud.lastError = null;
+    saveState();
+    setSyncStatus(null);
+    return { ok: true, msg: "Sincronizado" };
+  } catch (err) {
+    console.error(err);
+    state.cloud.lastError = String(err.message || err);
+    saveState();
+    setSyncStatus(null);
+    return { ok: false, msg: state.cloud.lastError };
+  }
+}
+
+function setSyncStatus(text) {
+  const el = document.getElementById("sync-status");
+  if (!el) return;
+  if (text) {
+    el.textContent = text;
+    el.style.display = "block";
+  } else {
+    el.style.display = "none";
+  }
+}
+
+function formatRelativeTime(ts) {
+  if (!ts) return "nunca";
+  const seconds = Math.floor((Date.now() - ts) / 1000);
+  if (seconds < 60) return `${seconds}s atrás`;
+  const mins = Math.floor(seconds / 60);
+  if (mins < 60) return `${mins} min atrás`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} h atrás`;
+  const days = Math.floor(hours / 24);
+  return `${days} d atrás`;
+}
+
+function renderCloudConfig() {
+  document.getElementById("cloud-user").value = state.cloud.user || "";
+  document.getElementById("cloud-repo").value = state.cloud.repo || "";
+  document.getElementById("cloud-token").value = state.cloud.token || "";
+  const status = document.getElementById("cloud-status");
+  if (status) {
+    if (cloudConfigured()) {
+      const ts = state.cloud.lastSync;
+      const last = ts ? `Última sincronização: ${formatRelativeTime(ts)}` : "Ainda não sincronizou";
+      const err = state.cloud.lastError ? `<br><span class="hint-error">Último erro: ${escapeHtml(state.cloud.lastError)}</span>` : "";
+      status.innerHTML = `<span class="hint-ok">Configurado</span> · ${last}${err}`;
+    } else {
+      status.innerHTML = `<span class="hint-soft">Não configurado</span>`;
+    }
+  }
+}
+
+function saveCloudConfig() {
+  state.cloud.user = document.getElementById("cloud-user").value.trim();
+  state.cloud.repo = document.getElementById("cloud-repo").value.trim();
+  state.cloud.token = document.getElementById("cloud-token").value.trim();
+  if (!state.cloud.user || !state.cloud.repo || !state.cloud.token) {
+    toast("Preencha usuário, repositório e token", true);
+    return;
+  }
+  saveState();
+  toast("Configuração salva");
+  renderCloudConfig();
+}
+
+function disconnectCloud() {
+  if (!confirm("Desconectar da sincronização?\n(O token será removido deste navegador. Você pode reconectar a qualquer momento.)")) return;
+  state.cloud.user = "";
+  state.cloud.repo = "";
+  state.cloud.token = "";
+  state.cloud.lastSync = 0;
+  state.cloud.lastError = null;
+  saveState();
+  renderCloudConfig();
+  toast("Desconectado");
+}
+
+async function triggerSync() {
+  if (!cloudConfigured()) {
+    toast("Configure a sincronização primeiro", true);
+    return;
+  }
+  const btn = document.getElementById("sync-now-btn");
+  if (btn) btn.disabled = true;
+  const result = await cloudSync();
+  if (btn) btn.disabled = false;
+  toast(result.msg, !result.ok);
+  if (result.ok) {
+    renderLists();
+    renderCloudConfig();
+  } else {
+    renderCloudConfig();
+  }
+}
+
+
 function exportData() {
   const payload = {
     app: "vocab-jmdict",
@@ -328,6 +613,19 @@ function getCurrentList() {
   return state.lists.find(l => l.id === state.currentListId);
 }
 
+// ---------- TIMESTAMPS (para merge por entidade) ----------
+// Marca uma lista como modificada AGORA. Chame depois de qualquer mudança.
+function touchList(list) {
+  if (list) list._ts = Date.now();
+}
+
+// Idem para stat de uma palavra
+function touchStat(wordIdx) {
+  if (state.stats[wordIdx]) {
+    state.stats[wordIdx].ts = Date.now();
+  }
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({
     '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
@@ -371,7 +669,8 @@ function createList() {
     name,
     kanji: [],
     selected: [],
-    created: Date.now()
+    created: Date.now(),
+    _ts: Date.now()
   };
   state.lists.push(list);
   saveState();
@@ -479,6 +778,7 @@ function addKanjiToList() {
       totalMarked += autoMarkTopWords(list, k);
     }
   }
+  if (added > 0) touchList(list);
   saveState();
   input.value = "";
   if (added === 0) {
@@ -498,6 +798,7 @@ function removeKanjiFromList(kanji) {
   if (!confirm(`Remover ${kanji} desta lista?\n(As palavras marcadas continuam na lista.)`)) return;
   list.kanji = list.kanji.filter(k => k !== kanji);
   if (state.activeKanji === kanji) state.activeKanji = null;
+  touchList(list);
   saveState();
   renderListDetail();
 }
@@ -517,6 +818,10 @@ function deleteList() {
   const list = getCurrentList();
   if (!list) return;
   if (!confirm(`Excluir a lista "${list.name}"?\n${list.kanji.length} kanji e ${list.selected.length} palavras marcadas serão perdidos.`)) return;
+  // Tombstone: guarda id e ts da exclusão, pra que o merge saiba que essa lista
+  // foi APAGADA (e não ressurja vinda do remoto).
+  state.deletedLists = state.deletedLists || {};
+  state.deletedLists[list.id] = Date.now();
   state.lists = state.lists.filter(l => l.id !== list.id);
   state.currentListId = null;
   state.activeKanji = null;
@@ -609,6 +914,7 @@ function renderListResults() {
         toast(`${sorted.length} palavras marcadas`);
       }
       saveState();
+      touchList(list2);
       renderListDetail();
     };
   }
@@ -620,6 +926,7 @@ function toggleWordInCurrentList(wordIdx) {
   const i = list.selected.indexOf(wordIdx);
   if (i === -1) list.selected.push(wordIdx);
   else list.selected.splice(i, 1);
+  touchList(list);
   saveState();
 
   // Atualiza UI sem re-renderizar tudo
@@ -1039,6 +1346,12 @@ async function init() {
     if (file) importData(file);
     e.target.value = "";  // permite re-importar mesmo arquivo
   });
+
+  // Cloud sync
+  document.getElementById("cloud-save-btn").onclick = saveCloudConfig;
+  document.getElementById("cloud-disconnect-btn").onclick = disconnectCloud;
+  document.getElementById("sync-now-btn").onclick = triggerSync;
+  renderCloudConfig();
 
   // List detail
   document.getElementById("back-to-lists").onclick = () => switchView("lists");

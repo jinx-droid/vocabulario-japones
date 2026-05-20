@@ -1,48 +1,70 @@
-# 語彙クイズ — Vocabulário Quiz (v5)
+# 語彙クイズ — Vocabulário Quiz (v6)
 
-Web app de quiz de vocabulário japonês, organizado por listas pessoais de kanji,
-com dados de frequência reais.
+Web app de quiz de vocabulário japonês, com listas pessoais por kanji,
+SRS leve, e sincronização entre dispositivos via GitHub.
 
-## Novidades da v5
+## Sincronização em nuvem (GitHub)
 
-- **Auto-marcação por frequência**: ao adicionar um kanji a uma lista, as 15
-  palavras mais frequentes que o utilizam são marcadas automaticamente. Zero
-  cliques para começar a estudar.
-- **Ordenação por frequência real**: as palavras agora aparecem na ordem
-  em que aparecem no japonês moderno (baseado em corpus de notícias e
-  prioridade JMdict), em vez de ordenação por posição/tamanho.
+A v6 adiciona sync automática via repositório GitHub privado seu, sem OAuth.
+
+### Configuração única
+
+1. **Criar repositório privado no GitHub**
+   - github.com → "New" → nome: `vocab-quiz-backup` (ou outro)
+   - Marcar como **Private**, marcar "Add a README file"
+   - "Create repository"
+
+2. **Gerar Personal Access Token**
+   - github.com → foto no canto superior direito → Settings
+   - Final do menu lateral → Developer settings
+   - Personal access tokens → Fine-grained tokens
+   - "Generate new token":
+     - Token name: "Vocab Quiz Sync"
+     - Expiration: 1 year
+     - Repository access: Only select repositories → escolha o repo criado
+     - Permissions → Repository permissions → Contents: **Read and write**
+   - "Generate token"
+   - **Copie o token AGORA** (começa com `github_pat_...`). Não vai ser
+     possível ver de novo depois.
+
+3. **Configurar no app**
+   - Aba Listas → seção "Sincronização em nuvem" → "configurar"
+   - Preencha: usuário GitHub, nome do repositório, e o token
+   - "Salvar configuração"
+
+### Uso diário
+
+- Toque em "↻ Sincronizar agora" antes de mudar de dispositivo.
+- No outro dispositivo, toque em "↻ Sincronizar agora" para puxar as mudanças.
+- Merge é por entidade (lista por lista, palavra por palavra), com last-write-wins.
+- Se houver conflito em entidades específicas, vence a mais recente.
+
+### Privacidade
+
+- O repositório é privado.
+- O token tem permissão restrita só a Contents desse repo (não acessa
+  outros repos nem informações de conta).
+- O token fica no localStorage do navegador. Use "Desconectar" para removê-lo.
+- Se perder o celular: revogue o token no GitHub
+  (Settings → Developer settings → token → Revoke).
 
 ## Features acumuladas
 
 - Múltiplos significados visíveis ao explorar e no feedback do quiz.
+- Auto-marcação das 15 palavras mais frequentes ao adicionar um kanji.
+- Ordenação por frequência real (JMdict `nfXX`, `ichi1`, etc.).
 - SRS leve (peso por acertos/erros).
 - Direção inversa do quiz (significado → kanji).
-- Indicador visual de domínio (bolinhas de cor).
-- Filtro "Só erradas" para revisão focada.
+- Indicador visual de domínio (bolinhas).
+- Filtro "Só erradas" para revisão.
 - Lembrar último estado ao reabrir.
-- Backup via arquivo JSON (sincronização manual entre dispositivos).
+- Backup local via arquivo JSON.
+- **NOVO**: Sincronização entre dispositivos via GitHub.
 
-## Fluxo de uso
+## Hospedagem do app
 
-1. **Listas** → criar uma lista.
-2. Adicionar kanji (cole um bloco ou um por vez) — **15 palavras já vêm
-   marcadas automaticamente para cada kanji novo**.
-3. Tocar em qualquer kanji da lista para ajustar marcações se quiser.
-4. **Estudar** → configurar e iniciar quiz.
-
-## Hospedagem
-
-GitHub Pages: suba `index.html`, `style.css`, `app.js`, `words.json`,
-`index.json`. Settings → Pages → branch main, pasta root.
-
-## Privacidade
-
-Tudo em `localStorage`. Backup só local.
-
-## Fonte dos dados
-
-JMdict (eng-common) + dados de frequência do JMdict XML completo
-(tags `nfXX`, `ichi1`, `news1`, `spec1`). Mantido pelo EDRDG, CC BY-SA 4.0.
+GitHub Pages: `index.html`, `style.css`, `app.js`, `words.json`, `index.json`.
+Settings → Pages → branch main, pasta root.
 
 ## Atalhos (quiz)
 

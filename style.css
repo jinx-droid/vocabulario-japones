@@ -944,3 +944,66 @@ h2 {
 .mastery-mastered {
   background: var(--green);
 }
+
+/* === CLOUD SYNC === */
+.cloud-summary {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  list-style: none;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 13px;
+}
+.cloud-summary::-webkit-details-marker { display: none; }
+.cloud-summary::marker { content: ""; }
+.cloud-toggle {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+details[open] .cloud-toggle::after { content: ""; }
+details[open] .cloud-toggle { content: "fechar ▴"; }
+
+.cloud-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.cloud-fields input {
+  background: var(--paper);
+  border: 1.5px solid var(--ink);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  padding: 10px 12px;
+  color: var(--ink);
+  width: 100%;
+}
+.cloud-fields input:focus {
+  outline: none;
+  border-color: var(--hanko);
+}
+.cloud-config-actions {
+  display: flex;
+  gap: 8px;
+}
+.cloud-config-actions .btn-secondary {
+  flex: 1;
+  margin: 0;
+}
+.hint-ok { color: var(--green); font-weight: 500; }
+.hint-error { color: var(--hanko); font-size: 11px; }
+.sync-status-line {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--paper-deep);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border-left: 2px solid var(--hanko);
+}

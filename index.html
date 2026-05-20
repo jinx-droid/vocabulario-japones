@@ -56,6 +56,28 @@
     <p class="hint-soft" style="margin-top: 10px;">Use para sincronizar entre dispositivos: exporte aqui, abra o arquivo no outro celular/computador e importe.</p>
   </div>
 
+  <div class="config-block">
+    <div class="config-label">Sincronização em nuvem (GitHub)</div>
+    <details id="cloud-config-details">
+      <summary class="cloud-summary">
+        <span id="cloud-status">Não configurado</span>
+        <span class="cloud-toggle">configurar ▾</span>
+      </summary>
+      <div class="cloud-fields">
+        <input type="text" id="cloud-user" placeholder="Usuário GitHub (ex: seu-usuario)" autocomplete="off">
+        <input type="text" id="cloud-repo" placeholder="Repositório (ex: vocab-quiz-backup)" autocomplete="off">
+        <input type="password" id="cloud-token" placeholder="Personal Access Token (github_pat_...)" autocomplete="off">
+        <div class="cloud-config-actions">
+          <button class="btn-secondary" id="cloud-save-btn">Salvar configuração</button>
+          <button class="btn-secondary" id="cloud-disconnect-btn">Desconectar</button>
+        </div>
+        <p class="hint-soft">Veja o README do projeto para criar o token.</p>
+      </div>
+    </details>
+    <button class="btn-primary" id="sync-now-btn" style="margin-top: 10px;">↻ Sincronizar agora</button>
+    <div id="sync-status" class="sync-status-line" style="display:none"></div>
+  </div>
+
   <ul class="list-of-lists" id="list-of-lists"></ul>
   <div class="empty-state" id="lists-empty" style="display:none">
     Nenhuma lista ainda.<br>
