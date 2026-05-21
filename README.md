@@ -1,39 +1,36 @@
-# 語彙クイズ — Vocabulário Quiz (v7)
+# 語彙クイズ — Vocabulário Quiz (v8)
 
-Web app de quiz de vocabulário japonês com listas pessoais de kanji,
-SRS leve, sincronização entre dispositivos via GitHub.
+Web app de quiz de vocabulário japonês com listas pessoais de kanji.
 
-## Novidades da v7
+## Novidades da v8
 
-- **Renomear listas**: botão ✎ ao lado do título da lista.
-- **Configurar quantidade auto-marcada**: seletor ao lado de "Adicionar"
-  na tela de detalhe (10, 15, 25, 50, todas, ou desligado).
-- **Botão "Marcar N top"**: força re-aplicação da auto-marcação em um
-  kanji já adicionado.
-- **Filtro "Pular dominadas"**: novo modo de prática que exclui palavras
-  já dominadas (≥3 acertos com taxa ≥80%).
-- **Estatística por lista**: cabeçalho mostra breakdown visual de domínio
-  (verde/amarelo/vermelho/cinza).
-- **Salvar quiz interrompido**: se você sair de um quiz no meio,
-  pode retomar de onde parou na próxima vez.
-- **Modal próprio**: confirmações e prompts usam visual do app em vez
-  dos diálogos padrão do navegador.
-- **Modo escuro**: botão ☾/☀ no canto superior direito.
+- **Botão "Aplicar top N em todos os kanji"** dentro do detalhe da lista:
+  marca rapidamente as N palavras mais frequentes para todos os kanji,
+  útil para listas grandes vindas de v7.
+- **Aba Histórico**: registra automaticamente as últimas 50 sessões,
+  com resumo (total, hoje, 7 dias) e detalhe por sessão.
+- **Ordenação aprimorada**: verbos e adjetivos básicos têm prioridade
+  pedagógica (alguns ainda não chegam ao top 10 — ver Limitações).
 
 ## Features acumuladas
 
-- Sincronização GitHub via Personal Access Token.
-- Auto-marcação das palavras mais frequentes ao adicionar kanji.
-- Ordenação por frequência real (JMdict nfXX/ichi1/news1).
+- Sincronização GitHub via Personal Access Token (com merge inteligente).
+- Auto-marcação configurável (10/15/25/50/todas).
+- Botão re-aplicar top N por kanji ativo.
 - Múltiplos significados visíveis.
-- SRS leve.
-- Direção inversa do quiz.
-- Indicador visual de domínio (bolinhas).
-- Filtro "Só erradas".
-- Lembrar último estado.
+- SRS leve, direção inversa, indicador de domínio, filtro "só erradas"
+  e "pular dominadas".
+- Lembrar último estado, salvar quiz interrompido.
+- Renomear/excluir listas, modal próprio, modo escuro.
 - Backup local (arquivo JSON).
 
-## Sincronização GitHub
+## Limitações conhecidas
 
-Veja seções de configuração no README anterior (cria repo privado, gera
-fine-grained PAT com permissão Contents: Read and write, configura no app).
+- A frequência das palavras vem do JMdict (corpus jornalístico). Verbos
+  cotidianos como 食べる, 見る podem aparecer fora do top 10 em alguns kanji.
+- Histórico não inclui detalhes (quais palavras erradas), só resumo.
+
+## Atalhos (quiz)
+
+- `1`-`4`: alternativa
+- `Espaço`/`Enter`: próxima

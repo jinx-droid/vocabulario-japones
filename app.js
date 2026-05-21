@@ -15,6 +15,7 @@ let state = {
   lists: [],          // [{ id, name, kanji: [chars], selected: [wordIdx], created, _ts }]
   stats: {},          // { wordIdx: { c, w, ts } }
   deletedLists: {},   // tombstones: { listId: ts_of_deletion }
+  history: [],        // últimas sessões: [{ts, total, correct, mode, direction, source}]
   config: {
     mode: "meaning",
     direction: "k2m",
@@ -45,10 +46,11 @@ function saveState() {
       lists: state.lists,
       stats: state.stats,
       deletedLists: state.deletedLists,
+      history: state.history,
       config: state.config,
       cloud: state.cloud,
       lastView: state.lastView,
-      quiz: state.quiz  // persiste quiz em andamento pra poder retomar
+      quiz: state.quiz
     }));
   } catch (e) { toast("Não foi possível salvar", true); }
 }
@@ -61,15 +63,15 @@ function loadState() {
     if (Array.isArray(parsed.lists)) state.lists = parsed.lists;
     if (parsed.stats && typeof parsed.stats === 'object') state.stats = parsed.stats;
     if (parsed.deletedLists && typeof parsed.deletedLists === 'object') state.deletedLists = parsed.deletedLists;
+    if (Array.isArray(parsed.history)) state.history = parsed.history;
     if (parsed.config) state.config = { ...state.config, ...parsed.config };
     if (parsed.cloud) state.cloud = { ...state.cloud, ...parsed.cloud };
     if (parsed.lastView && typeof parsed.lastView === 'object') {
       state.lastView = { ...state.lastView, ...parsed.lastView };
     }
-    // Quiz pendente: guarda os campos cruz mas só rehidrata depois de loadData
     if (parsed.quiz && parsed.quiz.questionIds && Array.isArray(parsed.quiz.questionIds)) {
       if (parsed.quiz.index < parsed.quiz.questionIds.length) {
-        state._pendingQuiz = parsed.quiz;  // temporário
+        state._pendingQuiz = parsed.quiz;
       }
     }
   } catch (e) { console.warn(e); }
@@ -344,11 +346,12 @@ function cloudConfigured() {
 function buildSyncPayload() {
   return {
     app: "vocab-jmdict",
-    version: 5,
+    version: 6,
     syncedAt: Date.now(),
     lists: state.lists,
     stats: state.stats,
-    deletedLists: state.deletedLists || {}
+    deletedLists: state.deletedLists || {},
+    history: state.history || []
   };
 }
 
@@ -470,6 +473,19 @@ function mergeRemote(remote) {
     if (!r) { merged.stats[k] = l; continue; }
     merged.stats[k] = (l.ts || 0) >= (r.ts || 0) ? l : r;
   }
+
+  // History: união (cada sessão tem ts único). Dedup por ts.
+  const localHistory = state.history || [];
+  const remoteHistory = remote.history || [];
+  const histByTs = {};
+  for (const h of localHistory) histByTs[h.ts] = h;
+  for (const h of remoteHistory) {
+    if (!histByTs[h.ts]) histByTs[h.ts] = h;
+  }
+  merged.history = Object.values(histByTs)
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, 50);  // mantém os 50 mais recentes
+
   return merged;
 }
 
@@ -499,6 +515,7 @@ async function cloudSync() {
       state.lists = merged.lists;
       state.stats = merged.stats;
       state.deletedLists = merged.deletedLists;
+      state.history = merged.history || state.history || [];
     }
 
     setSyncStatus("Enviando…");
@@ -890,6 +907,46 @@ function autoMarkTopWords(list, kanji, n) {
     }
   }
   return added;
+}
+
+// Atualiza o texto do botão de aplicar em massa
+function updateBulkMarkLabel() {
+  const btn = document.getElementById("bulk-mark-btn");
+  if (!btn) return;
+  const n = state.config.autoMark || 15;
+  if (n === 0) {
+    btn.textContent = "Aplicar top N em todos (selecione N acima)";
+  } else {
+    btn.textContent = `Aplicar top ${n} em todos os kanji`;
+  }
+}
+
+// Aplica autoMarkTopWords pra todos os kanji da lista atual
+async function bulkMarkAllKanji() {
+  const list = getCurrentList();
+  if (!list || list.kanji.length === 0) return;
+  const n = state.config.autoMark || 15;
+  if (n === 0) {
+    toast('Auto-marcação está desligada (escolha "+10/+15/etc")', true);
+    return;
+  }
+  const ok = await customConfirm(
+    `Marcar as ${n} palavras mais frequentes de cada um dos ${list.kanji.length} kanji da lista?\n\nPalavras já marcadas permanecem. Só adiciona as que faltam.`,
+    { okLabel: "Aplicar" }
+  );
+  if (!ok) return;
+  let total = 0;
+  for (const k of list.kanji) {
+    total += autoMarkTopWords(list, k, n);
+  }
+  if (total > 0) {
+    touchList(list);
+    saveState();
+    renderListDetail();
+    toast(`${total} novas palavras marcadas`);
+  } else {
+    toast(`Nenhuma nova: já tinha as top ${n} de todos os kanji`);
+  }
 }
 
 function addKanjiToList() {
@@ -1461,7 +1518,22 @@ function endQuiz() {
   else if (pct >= 60) { stamp.textContent = "可"; label.textContent = "Aprovado"; }
   else { stamp.textContent = "再"; label.textContent = "Refaça"; }
 
-  state.quiz = null;  // limpa quiz finalizado
+  // Registra no histórico (limita a 50 mais recentes)
+  if (total > 0) {
+    const sourceLabel = state.config.source === "all"
+      ? "Todas as listas"
+      : (state.lists.find(l => l.id === state.config.source)?.name || "Lista");
+    state.history.unshift({
+      ts: Date.now(),
+      total, correct,
+      mode: state.config.mode,
+      direction: state.config.direction,
+      source: sourceLabel
+    });
+    if (state.history.length > 50) state.history = state.history.slice(0, 50);
+  }
+
+  state.quiz = null;
   saveState();
   switchView("result");
 }
@@ -1483,6 +1555,86 @@ async function quitQuiz() {
 }
 
 // ---------- VIEW SWITCHING ----------
+// ---------- HISTORY ----------
+function renderHistory() {
+  const list = state.history || [];
+  const listEl = document.getElementById("history-list");
+  const emptyEl = document.getElementById("history-empty");
+  const statsBlock = document.getElementById("history-stats");
+  const summaryEl = document.getElementById("history-summary");
+  const dangerEl = document.getElementById("history-danger");
+
+  if (list.length === 0) {
+    emptyEl.style.display = "block";
+    statsBlock.style.display = "none";
+    dangerEl.style.display = "none";
+    listEl.innerHTML = "";
+    return;
+  }
+  emptyEl.style.display = "none";
+  statsBlock.style.display = "block";
+  dangerEl.style.display = "block";
+
+  // Resumo geral
+  const totalQ = list.reduce((s, r) => s + r.total, 0);
+  const totalC = list.reduce((s, r) => s + r.correct, 0);
+  const avgPct = totalQ > 0 ? Math.round(totalC / totalQ * 100) : 0;
+  // Hoje
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const today = list.filter(r => r.ts >= todayStart.getTime());
+  const todayQ = today.reduce((s, r) => s + r.total, 0);
+  const todayC = today.reduce((s, r) => s + r.correct, 0);
+  // 7 dias
+  const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+  const week = list.filter(r => r.ts >= weekAgo);
+  summaryEl.innerHTML = `
+    <span>Total: <strong>${list.length}</strong> sessões, ${totalQ} perguntas, <strong>${avgPct}%</strong></span>
+    <span>Hoje: <strong>${today.length}</strong> sessões, ${todayQ} perguntas${todayQ > 0 ? `, <strong>${Math.round(todayC/todayQ*100)}%</strong>` : ""}</span>
+    <span>7 dias: <strong>${week.length}</strong> sessões</span>
+  `;
+
+  // Lista detalhada
+  listEl.innerHTML = "";
+  for (const rec of list) {
+    const pct = rec.total > 0 ? Math.round(rec.correct / rec.total * 100) : 0;
+    const modeLabels = {
+      meaning: "significado", reading: "leitura", mixed: "misto"
+    };
+    const dirLabels = {
+      k2m: "kanji → resp.", m2k: "resp. → kanji"
+    };
+    const modeText = modeLabels[rec.mode] || rec.mode;
+    const dirText = dirLabels[rec.direction] || rec.direction;
+    let pctClass = "shaky";
+    if (pct >= 80) pctClass = "good";
+    else if (pct < 50) pctClass = "bad";
+
+    const li = document.createElement("li");
+    li.className = "history-item";
+    li.innerHTML = `
+      <div class="history-when">${formatRelativeTime(rec.ts)}</div>
+      <div class="history-body">
+        <div class="history-score history-score-${pctClass}">${rec.correct}/${rec.total} · ${pct}%</div>
+        <div class="history-meta">${escapeHtml(rec.source)} · ${modeText} · ${dirText}</div>
+      </div>
+    `;
+    listEl.appendChild(li);
+  }
+}
+
+async function clearHistory() {
+  if ((state.history || []).length === 0) return;
+  const ok = await customConfirm(
+    `Apagar o histórico de ${state.history.length} sessões?\n\nAs estatísticas por palavra (acertos/erros) continuam preservadas.`,
+    { okLabel: "Apagar" }
+  );
+  if (!ok) return;
+  state.history = [];
+  saveState();
+  renderHistory();
+  toast("Histórico apagado");
+}
+
 function switchView(name) {
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
   document.getElementById(name + "-view").classList.add("active");
@@ -1499,9 +1651,10 @@ function switchView(name) {
 
   if (name === "lists") renderLists();
   if (name === "setup") renderSetupSelect();
+  if (name === "history") renderHistory();
 
   // Persiste só views "retomáveis" (não retoma em quiz/result, que são transitórias)
-  if (["lists", "list-detail", "setup"].includes(name)) {
+  if (["lists", "list-detail", "setup", "history"].includes(name)) {
     state.lastView = {
       view: name,
       listId: name === "list-detail" ? state.currentListId : null,
@@ -1614,7 +1767,15 @@ async function init() {
     saveState();
     // Re-renderiza se houver kanji ativo, pra atualizar texto do "Marcar N top"
     if (state.activeKanji) renderListResults();
+    updateBulkMarkLabel();
   });
+
+  // Bulk mark all kanji button
+  document.getElementById("bulk-mark-btn").onclick = bulkMarkAllKanji;
+  updateBulkMarkLabel();
+
+  // Clear history button
+  document.getElementById("clear-history-btn").onclick = clearHistory;
 
   // Setup
   document.getElementById("source-select").addEventListener("change", (e) => {

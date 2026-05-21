@@ -34,6 +34,7 @@
 <nav class="tabs" role="tablist">
   <button class="tab active" data-view="lists">Listas</button>
   <button class="tab" data-view="setup">Estudar</button>
+  <button class="tab" data-view="history">Histórico</button>
 </nav>
 
 <main>
@@ -116,6 +117,7 @@
   <div class="config-block" id="kanji-chips-block" style="display:none">
     <div class="config-label">Kanji nesta lista <span class="hint-soft">— toque para ver palavras</span></div>
     <div class="kanji-chips" id="kanji-chips"></div>
+    <button class="btn-secondary" id="bulk-mark-btn" style="margin-top: 12px; width: 100%;">Aplicar top N em todos os kanji</button>
   </div>
 
   <div id="explore-results"></div>
@@ -220,7 +222,26 @@
   <button class="next-btn" id="restart-btn" style="margin-top: 18px;">Nova sessão</button>
 </section>
 
+<!-- HISTORY VIEW -->
+<section id="history-view" class="view">
+  <h2>Histórico de sessões</h2>
+  <p class="section-meta">— últimas 50 sessões, mais recente primeiro</p>
 
+  <div id="history-stats" class="config-block" style="display:none">
+    <div class="config-label">Resumo</div>
+    <div class="stats" id="history-summary"></div>
+  </div>
+
+  <ul class="history-list" id="history-list"></ul>
+  <div class="empty-state" id="history-empty" style="display:none">
+    Nenhuma sessão registrada ainda.<br>
+    Faça um quiz pra começar.
+  </div>
+
+  <div class="danger-zone" id="history-danger" style="display:none">
+    <button class="btn-danger" id="clear-history-btn">Limpar histórico</button>
+  </div>
+</section>
 
 </main>
 
