@@ -885,16 +885,32 @@ function renderKanjiChips() {
 
 // Marca automaticamente as TOP_N palavras mais frequentes do kanji na lista.
 // Só adiciona palavras que ainda não estão em selected. Retorna quantas foram adicionadas.
+// Score combinado JLPT+frequência para ordenar palavras.
+// Menor = melhor (mais útil pedagogicamente).
+// - Palavras com nível JLPT vencem todas as outras.
+// - Entre as JLPT, vence o nível mais básico (N5 antes de N4 antes de N3...).
+// - Dentro do mesmo nível, vence a frequência menor (mais comum no corpus).
+function wordScore(word) {
+  const j = word.j;
+  const f = word.f ?? 99;
+  if (j !== undefined && j !== null) {
+    // N5 (j=5) → 0, N4 → 10, N3 → 20, N2 → 30, N1 → 40
+    return (5 - j) * 10 + Math.min(f, 50) * 0.01;
+  }
+  // sem JLPT: começa em 100 + f (sempre depois de qualquer JLPT)
+  return 100 + f;
+}
+
 function autoMarkTopWords(list, kanji, n) {
   if (n === undefined) n = state.config.autoMark || 15;
   if (n === 0) return 0;  // "0" = não auto-marcar
   const indices = DATA.index[kanji] || [];
   if (indices.length === 0) return 0;
-  // ordena por frequência igual à exibição
+  // ordena: JLPT primeiro (mais básico antes), depois frequência
   const sorted = [...indices].sort((a, b) => {
-    const fa = DATA.words[a].f ?? 99;
-    const fb = DATA.words[b].f ?? 99;
-    if (fa !== fb) return fa - fb;
+    const sa = wordScore(DATA.words[a]);
+    const sb = wordScore(DATA.words[b]);
+    if (sa !== sb) return sa - sb;
     return DATA.words[a].k.length - DATA.words[b].k.length;
   });
   const topIds = n >= sorted.length ? sorted : sorted.slice(0, n);
@@ -1062,12 +1078,12 @@ function renderListResults() {
     return;
   }
 
-  // Ordena por frequência (campo f). Menor f = mais frequente.
-  // Desempate: tamanho da palavra (menor primeiro).
+  // Ordena: JLPT primeiro (N5 antes de N4 antes de N3...), depois frequência.
+  // Palavras sem JLPT vão por último, ordenadas por frequência.
   const sorted = [...indices].sort((a, b) => {
-    const fa = DATA.words[a].f ?? 99;
-    const fb = DATA.words[b].f ?? 99;
-    if (fa !== fb) return fa - fb;
+    const sa = wordScore(DATA.words[a]);
+    const sb = wordScore(DATA.words[b]);
+    if (sa !== sb) return sa - sb;
     return DATA.words[a].k.length - DATA.words[b].k.length;
   });
 
